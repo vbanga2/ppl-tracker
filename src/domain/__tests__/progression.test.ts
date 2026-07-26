@@ -37,7 +37,7 @@ describe('suggestNext', () => {
   it('rule 1: repeats last logged set if sets exist today', () => {
     const block = makeBlock()
     const today = [makeSet({ weightLb: 135, reps: 6 }), makeSet({ weightLb: 135, reps: 7 })]
-    const s = suggestNext(block, today, null, [], null)
+    const s = suggestNext(block, today, null, [], null, 5)
     expect(s.weightLb).toBe(135)
     expect(s.reps).toBe(7)
   })
@@ -61,7 +61,7 @@ describe('suggestNext', () => {
       makeSet({ weightLb: 100, reps: 7, setIndex: 0 }),
       makeSet({ weightLb: 100, reps: 6, setIndex: 1 }),
     ]
-    const s = suggestNext(block, [], null, prev, null)
+    const s = suggestNext(block, [], null, prev, null, 5)
     expect(s.weightLb).toBe(100)
     expect(s.message).toMatch(/beat/i)
   })
@@ -73,8 +73,7 @@ describe('suggestNext', () => {
       makeSet({ weightLb: 80, reps: 12, setIndex: 1 }),
       makeSet({ weightLb: 80, reps: 10, setIndex: 2 }),
     ]
-    const s = suggestNext(block, [], null, prev, null)
-    // repHigh null → should not bump
+    const s = suggestNext(block, [], null, prev, null, 5)
     expect(s.weightLb).toBe(80)
     expect(s.message).not.toMatch(/up \d/)
   })
@@ -86,8 +85,7 @@ describe('suggestNext', () => {
     })
     const sourceToday = [makeSet({ blockId: 'blk-source', weightLb: 200, reps: 5 })]
     const sourcePrev = [makeSet({ blockId: 'blk-source', weightLb: 180, reps: 5 })]
-    const s = suggestNext(block, [], sourceToday, [], sourcePrev)
-    // Should use today's 200 * 0.8 = 160, rounded to 2.5
+    const s = suggestNext(block, [], sourceToday, [], sourcePrev, 5)
     expect(s.weightLb).toBe(160)
     expect(s.message).toMatch(/today/i)
   })
@@ -95,16 +93,39 @@ describe('suggestNext', () => {
   it('derived load rounds to 2.5 lb', () => {
     const block = makeBlock({ deriveFromBlockId: 'blk-source', deriveMultiplier: 0.75 })
     const sourceToday = [makeSet({ blockId: 'blk-source', weightLb: 100, reps: 5 })]
-    const s = suggestNext(block, [], sourceToday, [], null)
-    // 100 * 0.75 = 75, already divisible by 2.5
+    const s = suggestNext(block, [], sourceToday, [], null, 5)
     expect(s.weightLb % 2.5).toBe(0)
   })
 
   it('rule 5: no history → zero weight, baseline message', () => {
     const block = makeBlock()
-    const s = suggestNext(block, [], null, [], null)
+    const s = suggestNext(block, [], null, [], null, 5)
     expect(s.weightLb).toBe(0)
     expect(s.message).toMatch(/baseline/i)
+  })
+
+  it('squat maxed → bumps by 10 lb', () => {
+    const block = makeBlock({ exerciseId: 'ex-squat', targetSets: 3, repLow: 5, repHigh: 8 })
+    const prev = [
+      makeSet({ weightLb: 200, reps: 8, setIndex: 0 }),
+      makeSet({ weightLb: 200, reps: 8, setIndex: 1 }),
+      makeSet({ weightLb: 200, reps: 8, setIndex: 2 }),
+    ]
+    const s = suggestNext(block, [], null, prev, null, 10)
+    expect(s.weightLb).toBe(210)
+    expect(s.reps).toBe(block.repLow)
+  })
+
+  it('dips maxed → bumps by 2.5 lb', () => {
+    const block = makeBlock({ exerciseId: 'ex-dips', targetSets: 3, repLow: 5, repHigh: 8 })
+    const prev = [
+      makeSet({ weightLb: 45, reps: 8, setIndex: 0 }),
+      makeSet({ weightLb: 45, reps: 8, setIndex: 1 }),
+      makeSet({ weightLb: 45, reps: 8, setIndex: 2 }),
+    ]
+    const s = suggestNext(block, [], null, prev, null, 2.5)
+    expect(s.weightLb).toBe(47.5)
+    expect(s.reps).toBe(block.repLow)
   })
 })
 
@@ -121,7 +142,6 @@ describe('metrics', () => {
       makeSet({ weightLb: 100, reps: 5 }),
       makeSet({ weightLb: 100, reps: 5 }),
     ]
-    // volumeLoad receives already-filtered sets (deletedAt filtering happens in repo)
     expect(volumeLoad(sets)).toBe(1000)
   })
 })

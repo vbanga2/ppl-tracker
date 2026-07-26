@@ -13,7 +13,7 @@ export function suggestNext(
   sourceBlockTodaySets: SetLog[] | null,
   prevSets: SetLog[],
   sourceBlockPrevSets: SetLog[] | null,
-  incrementLb = 5,
+  incrementLb: number,
 ): Suggestion {
   // Rule 1: already have sets today → repeat last set
   if (todaySets.length > 0) {

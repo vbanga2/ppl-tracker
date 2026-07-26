@@ -5,6 +5,7 @@ import { getLastSession, getOrCreateTodaySession } from '../../data/repo'
 import type { DbSession } from '../../data/db'
 import { DayPicker } from './DayPicker'
 import { ExerciseList } from './ExerciseList'
+import { CardioLogger } from './CardioLogger'
 
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10)
@@ -89,6 +90,7 @@ export function WorkoutPage() {
         </div>
       </div>
       <ExerciseList session={session} />
+      <CardioLogger session={session} />
     </div>
   )
 }

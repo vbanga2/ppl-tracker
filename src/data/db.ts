@@ -13,6 +13,7 @@ export interface DbExercise {
   formText: string
   noteText: string
   videoUrl: string
+  altVideoUrl: string | null
   imageKey: string
   updatedAt: number
   deletedAt: number | null
