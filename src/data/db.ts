@@ -1,5 +1,10 @@
 import Dexie, { type EntityTable } from 'dexie'
 
+export interface DbMeta {
+  key: string
+  value: string
+}
+
 export interface DbExercise {
   id: string
   day: 'push' | 'pull' | 'legs'
@@ -136,6 +141,7 @@ export interface DbMealEntry {
 }
 
 class PPLDatabase extends Dexie {
+  meta!: EntityTable<DbMeta, 'key'>
   exercises!: EntityTable<DbExercise, 'id'>
   blocks!: EntityTable<DbBlock, 'id'>
   sessions!: EntityTable<DbSession, 'id'>
@@ -160,6 +166,10 @@ class PPLDatabase extends Dexie {
       routes: 'id, sessionId, deletedAt',
       foods: 'id, barcode, deletedAt',
       mealEntries: 'id, date, slot, foodId, deletedAt',
+    })
+    // Version 2: adds the meta table for seed versioning
+    this.version(2).stores({
+      meta: 'key',
     })
   }
 }

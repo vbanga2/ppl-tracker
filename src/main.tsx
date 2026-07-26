@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { seedPlanIfEmpty } from './data/repo.ts'
+import { ensureSeedCurrent } from './data/repo.ts'
 
 async function bootstrap() {
   // P0: request durable storage immediately
@@ -12,7 +12,7 @@ async function bootstrap() {
   }
 
   try {
-    await seedPlanIfEmpty()
+    await ensureSeedCurrent()
   } catch (err) {
     console.error('Seed failed:', err)
   }

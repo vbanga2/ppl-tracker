@@ -2,24 +2,126 @@ import { db } from './db'
 import type { DbBlock, DbBodyMetric, DbCardioLog, DbExercise, DbMealEntry, DbSession, DbSetLog } from './db'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 
+// Bump this whenever SEED_EXERCISES or SEED_BLOCKS changes incompatibly.
+// The migration runs once on any device whose stored version is lower.
+const SEED_VERSION = 2
+
 function now(): number {
   return Date.now()
 }
 
-// ─── Seed ─────────────────────────────────────────────────────────────────────
+// ─── Seed / Migration ─────────────────────────────────────────────────────────
 
-export async function seedPlanIfEmpty(): Promise<void> {
-  const count = await db.exercises.count()
-  if (count > 0) return
+export async function ensureSeedCurrent(): Promise<void> {
+  const stored = await db.meta.get('seedVersion')
+  const storedVersion = stored ? parseInt(stored.value, 10) : 0
+  if (storedVersion >= SEED_VERSION) return
 
-  const ts = now()
-  await db.transaction('rw', db.exercises, db.blocks, async () => {
-    await db.exercises.bulkAdd(
-      SEED_EXERCISES.map(e => ({ ...e, updatedAt: ts, deletedAt: null })),
-    )
-    await db.blocks.bulkAdd(
-      SEED_BLOCKS.map(b => ({ ...b, updatedAt: ts, deletedAt: null })),
-    )
+  const allOldExercises = await db.exercises.toArray()
+
+  await db.transaction('rw', db.exercises, db.blocks, db.meta, async () => {
+    const ts = now()
+
+    // Derive a "key" from each old exercise's ID by stripping the "ex-" prefix.
+    // E.g. "ex-bench" → "bench", which matches imageKey "bench" in the new seed.
+    const oldByKey = new Map<string, DbExercise>()
+    for (const ex of allOldExercises) {
+      const key = ex.id.startsWith('ex-') ? ex.id.slice(3) : ex.id
+      oldByKey.set(key, ex)
+    }
+
+    const matchedOldIds = new Set<string>()
+
+    for (const newEx of SEED_EXERCISES) {
+      const key = newEx.imageKey
+      const oldEx = oldByKey.get(key)
+
+      if (oldEx) {
+        // ── Matched exercise: update content in-place, keep old ID ──
+        // Keeping the ID means every setLog that references a block of this exercise
+        // continues to point at the right place.
+        matchedOldIds.add(oldEx.id)
+
+        await db.exercises.update(oldEx.id, {
+          day: newEx.day,
+          orderIndex: newEx.orderIndex,
+          name: newEx.name,
+          incrementLb: newEx.incrementLb,
+          isBodyweight: newEx.isBodyweight,
+          mainMuscles: newEx.mainMuscles,
+          synMuscles: newEx.synMuscles,
+          stabMuscles: newEx.stabMuscles,
+          formText: newEx.formText,
+          noteText: newEx.noteText,
+          videoUrl: newEx.videoUrl,
+          altVideoUrl: newEx.altVideoUrl,
+          imageKey: newEx.imageKey,
+          updatedAt: ts,
+          deletedAt: null,
+        })
+
+        // Reconcile blocks by orderIndex to preserve setLog→blockId links.
+        const oldBlocks = await db.blocks.where('exerciseId').equals(oldEx.id).toArray()
+        const newBlocks = SEED_BLOCKS.filter(b => b.exerciseId === newEx.id)
+
+        const oldByOrderIndex = new Map(oldBlocks.map(b => [b.orderIndex, b]))
+        const newOrderIndices = new Set(newBlocks.map(b => b.orderIndex))
+
+        for (const newBlock of newBlocks) {
+          const oldBlock = oldByOrderIndex.get(newBlock.orderIndex)
+          if (oldBlock) {
+            // Update in-place — setLogs referencing this blockId remain valid.
+            await db.blocks.update(oldBlock.id, {
+              label: newBlock.label,
+              targetSets: newBlock.targetSets,
+              repLow: newBlock.repLow,
+              repHigh: newBlock.repHigh,
+              restSeconds: newBlock.restSeconds,
+              deriveFromBlockId: newBlock.deriveFromBlockId,
+              deriveMultiplier: newBlock.deriveMultiplier,
+              setNotes: newBlock.setNotes,
+              updatedAt: ts,
+              deletedAt: null,
+            })
+          } else {
+            // New block slot for this exercise (higher orderIndex than before).
+            await db.blocks.add({ ...newBlock, exerciseId: oldEx.id, updatedAt: ts, deletedAt: null })
+          }
+        }
+
+        // Soft-delete block slots that no longer exist in the new seed.
+        // Their setLogs are kept; the UI just won't surface them in the active list.
+        for (const oldBlock of oldBlocks) {
+          if (!newOrderIndices.has(oldBlock.orderIndex) && oldBlock.deletedAt === null) {
+            await db.blocks.update(oldBlock.id, { deletedAt: ts, updatedAt: ts })
+          }
+        }
+
+      } else {
+        // ── New exercise: insert fresh ──
+        await db.exercises.add({ ...newEx, updatedAt: ts, deletedAt: null })
+        const newBlocks = SEED_BLOCKS.filter(b => b.exerciseId === newEx.id)
+        for (const block of newBlocks) {
+          await db.blocks.add({ ...block, updatedAt: ts, deletedAt: null })
+        }
+      }
+    }
+
+    // Soft-delete old exercises that have no counterpart in the new seed.
+    // Their blocks are soft-deleted too, but setLogs are left untouched.
+    for (const oldEx of allOldExercises) {
+      if (!matchedOldIds.has(oldEx.id) && oldEx.deletedAt === null) {
+        await db.exercises.update(oldEx.id, { deletedAt: ts, updatedAt: ts })
+        const orphanBlocks = await db.blocks.where('exerciseId').equals(oldEx.id).toArray()
+        for (const blk of orphanBlocks) {
+          if (blk.deletedAt === null) {
+            await db.blocks.update(blk.id, { deletedAt: ts, updatedAt: ts })
+          }
+        }
+      }
+    }
+
+    await db.meta.put({ key: 'seedVersion', value: String(SEED_VERSION) })
   })
 }
 
