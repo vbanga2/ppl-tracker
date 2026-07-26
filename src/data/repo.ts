@@ -1,10 +1,11 @@
 import { db } from './db'
 import type { DbBlock, DbBodyMetric, DbCardioLog, DbExercise, DbMealEntry, DbSession, DbSetLog } from './db'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
+import { DEFAULT_PLATES, type PlateInventory } from '../domain/plates'
 
 // Bump this whenever SEED_EXERCISES or SEED_BLOCKS changes incompatibly.
 // The migration runs once on any device whose stored version is lower.
-const SEED_VERSION = 2
+const SEED_VERSION = 3
 
 function now(): number {
   return Date.now()
@@ -307,6 +308,22 @@ export async function getMealEntriesForDate(date: string): Promise<DbMealEntry[]
     .equals(date)
     .filter(m => m.deletedAt === null)
     .toArray()
+}
+
+// ─── Plate Inventory ─────────────────────────────────────────────────────────
+
+export async function getPlateInventory(): Promise<PlateInventory[]> {
+  const stored = await db.meta.get('plateInventory')
+  if (!stored) return DEFAULT_PLATES
+  try {
+    return JSON.parse(stored.value) as PlateInventory[]
+  } catch {
+    return DEFAULT_PLATES
+  }
+}
+
+export async function savePlateInventory(inv: PlateInventory[]): Promise<void> {
+  await db.meta.put({ key: 'plateInventory', value: JSON.stringify(inv) })
 }
 
 // ─── All-Sets history (for charts) ───────────────────────────────────────────

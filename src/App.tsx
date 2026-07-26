@@ -7,6 +7,7 @@ import { ProgressPage } from './features/progress/ProgressPage'
 import { BodyPage } from './features/body/BodyPage'
 import { NutritionPage } from './features/nutrition/NutritionPage'
 import { SettingsPage } from './features/settings/SettingsPage'
+import type { Day } from './domain/plan'
 
 type Tab = 'workout' | 'progress' | 'body' | 'nutrition' | 'settings'
 
@@ -17,6 +18,7 @@ interface AppProps {
 export default function App({ storageGranted }: AppProps) {
   const [tab, setTab] = useState<Tab>('workout')
   const [showInstallGate, setShowInstallGate] = useState(false)
+  const [sessionDay, setSessionDay] = useState<Day | null>(null)
 
   useEffect(() => {
     const isStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone
@@ -32,19 +34,21 @@ export default function App({ storageGranted }: AppProps) {
   }
 
   return (
-    <div className="flex flex-col min-h-svh bg-slate-900 text-slate-100">
+    <div className="flex flex-col min-h-svh" style={{ background: '#0f1216', color: '#e8ecf1' }}>
       {!storageGranted && <StorageBanner />}
       {showInstallGate && <InstallGate onDismiss={dismissInstall} />}
 
       <main className="flex-1 overflow-y-auto pb-20">
-        {tab === 'workout' && <WorkoutPage />}
+        {tab === 'workout' && (
+          <WorkoutPage onDayReady={setSessionDay} />
+        )}
         {tab === 'progress' && <ProgressPage />}
         {tab === 'body' && <BodyPage />}
         {tab === 'nutrition' && <NutritionPage />}
         {tab === 'settings' && <SettingsPage />}
       </main>
 
-      <Nav current={tab} onChange={setTab} />
+      <Nav current={tab} onChange={setTab} sessionDay={sessionDay} />
     </div>
   )
 }

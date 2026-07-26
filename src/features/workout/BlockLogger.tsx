@@ -7,25 +7,71 @@ import {
   deleteSet,
   getAllBlocks,
   getSetsForSession,
+  getPlateInventory,
 } from '../../data/repo'
 import { suggestNext } from '../../domain/progression'
+import { calculatePlates, formatPlates } from '../../domain/plates'
+import type { PlateInventory } from '../../domain/plates'
 import { Stepper } from '../../ui/Stepper'
 import { RestTimer } from './RestTimer'
+import { PALETTE, blockColors, dayAccent } from '../../ui/tokens'
 
 interface BlockLoggerProps {
   block: DbBlock
   exercise: DbExercise
   session: DbSession
+  onProgressUpdate?: (blockId: string, count: number) => void
 }
 
-export function BlockLogger({ block, exercise, session }: BlockLoggerProps) {
+function restLabel(s: number): string {
+  if (s === 0) return 'no rest'
+  if (s < 60) return `${s}s rest`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return rem === 0 ? `${m} min rest` : `${m}m ${rem}s rest`
+}
+
+function repRange(block: DbBlock): string {
+  return block.repHigh ? `${block.repLow}–${block.repHigh}` : `${block.repLow}+`
+}
+
+function PlateDisplay({
+  weight,
+  inventory,
+}: {
+  weight: number
+  inventory: PlateInventory[]
+}) {
+  if (weight <= 0) return null
+  const { perSide, achievable, nearestBelow } = calculatePlates(weight, inventory)
+  if (!achievable) {
+    return (
+      <p className="text-xs mt-1" style={{ color: PALETTE.mute }}>
+        Can't load {weight} lb — nearest: {nearestBelow} lb ({formatPlates(perSide)} per side)
+      </p>
+    )
+  }
+  return (
+    <p className="text-xs mt-1" style={{ color: PALETTE.dim }}>
+      {formatPlates(perSide)} per side
+    </p>
+  )
+}
+
+export function BlockLogger({ block, exercise, session, onProgressUpdate }: BlockLoggerProps) {
   const [todaySets, setTodaySets] = useState<DbSetLog[]>([])
+  const [prevSets, setPrevSets] = useState<DbSetLog[]>([])
   const [weight, setWeight] = useState(0)
   const [reps, setReps] = useState(block.repLow)
   const [rir, setRir] = useState(2)
   const [suggestion, setSuggestion] = useState<{ message: string } | null>(null)
   const [showTimer, setShowTimer] = useState(false)
   const [logging, setLogging] = useState(false)
+  const [inventory, setInventory] = useState<PlateInventory[]>([])
+
+  useEffect(() => {
+    getPlateInventory().then(setInventory)
+  }, [])
 
   const loadSets = useCallback(async () => {
     const [today, prev] = await Promise.all([
@@ -33,8 +79,9 @@ export function BlockLogger({ block, exercise, session }: BlockLoggerProps) {
       getPreviousSetsForBlock(block.id, session.id),
     ])
     setTodaySets(today)
+    setPrevSets(prev)
+    onProgressUpdate?.(block.id, today.length)
 
-    // Build suggestion
     let sourceBlockTodaySets: DbSetLog[] | null = null
     let sourceBlockPrevSets: DbSetLog[] | null = null
 
@@ -54,7 +101,7 @@ export function BlockLogger({ block, exercise, session }: BlockLoggerProps) {
       setWeight(s.weightLb)
       setReps(s.reps)
     }
-  }, [block, session.id])
+  }, [block, session.id, exercise.incrementLb, onProgressUpdate])
 
   useEffect(() => {
     loadSets()
@@ -89,41 +136,97 @@ export function BlockLogger({ block, exercise, session }: BlockLoggerProps) {
     await loadSets()
   }
 
-  const targetLabel = block.repHigh
-    ? `${block.repLow}–${block.repHigh} reps`
-    : `${block.repLow}+ reps (AMRAP)`
+  const colors = blockColors(block.label)
+  const accent = dayAccent(exercise.day)
+  const done = todaySets.length
+  const target = block.targetSets
 
   return (
-    <div className="bg-slate-800 rounded-2xl px-4 py-4">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <p className="font-medium text-sm">{block.label}</p>
-          <p className="text-xs text-slate-400">
-            {block.targetSets} sets · {targetLabel} · {block.restSeconds}s rest
+    <div
+      className="rounded-2xl px-4 py-4"
+      style={{
+        background: PALETTE.panel,
+        borderLeft: `3px solid ${colors.border}`,
+      }}
+    >
+      {/* Block header — label pill + prescription */}
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            className="text-xs font-medium px-2 py-0.5 rounded-md shrink-0"
+            style={{ background: colors.pillBg, color: colors.pillText }}
+          >
+            {block.label}
+          </span>
+          <p className="text-xs truncate" style={{ color: PALETTE.dim }}>
+            {target} × {repRange(block)} · {restLabel(block.restSeconds)}
           </p>
         </div>
-        <span className="text-xs text-slate-500">
-          {todaySets.length}/{block.targetSets}
+        <span
+          className="text-xs shrink-0 tabular-nums"
+          style={{ color: done >= target ? accent : PALETTE.mute, fontVariantNumeric: 'tabular-nums' }}
+        >
+          {done}/{target}
         </span>
       </div>
 
+      {/* Previous session reference */}
+      {prevSets.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1">
+          {prevSets.map((s, i) => (
+            <span
+              key={i}
+              className="text-xs px-2 py-0.5 rounded"
+              style={{
+                fontVariantNumeric: 'tabular-nums',
+                background: PALETTE.line,
+                color: PALETTE.mute,
+              }}
+            >
+              {s.weightLb} × {s.reps}
+            </span>
+          ))}
+          <span className="text-xs self-center" style={{ color: PALETTE.mute }}>
+            last session
+          </span>
+        </div>
+      )}
+
+      {/* Suggestion */}
       {suggestion && (
-        <p className="text-xs text-blue-300 mb-3 bg-blue-900/30 rounded-xl px-3 py-2">
+        <p
+          className="text-xs mb-3 rounded-xl px-3 py-2"
+          style={{ color: colors.pillText || PALETTE.dim, background: colors.pillBg }}
+        >
           {suggestion.message}
         </p>
       )}
 
-      {/* Logged sets */}
+      {/* Today's logged sets */}
       {todaySets.length > 0 && (
         <div className="mb-3 flex flex-col gap-1">
           {todaySets.map((s, i) => (
-            <div key={s.id} className="flex items-center justify-between text-sm bg-slate-700/60 rounded-lg px-3 py-2">
-              <span className="text-slate-400 text-xs">#{i + 1}</span>
-              <span className="font-semibold">{s.weightLb} lb × {s.reps}</span>
-              <span className="text-slate-400 text-xs">RIR {s.rir}</span>
+            <div
+              key={s.id}
+              className="flex items-center justify-between rounded-lg px-3 py-2"
+              style={{ background: PALETTE.line }}
+            >
+              <span className="text-xs" style={{ color: PALETTE.mute }}>
+                #{i + 1}
+              </span>
+              <span
+                className="font-medium text-sm"
+                style={{ color: PALETTE.fg, fontVariantNumeric: 'tabular-nums' }}
+              >
+                {s.weightLb} lb × {s.reps}
+              </span>
+              <span className="text-xs" style={{ color: PALETTE.mute }}>
+                RIR {s.rir}
+              </span>
               <button
                 onClick={() => handleDelete(s.id)}
-                className="text-red-400 text-xs ml-2 min-h-[44px] px-2"
+                className="text-xs ml-2 px-2"
+                style={{ minHeight: 44, color: '#e05252' }}
               >
                 ✕
               </button>
@@ -132,24 +235,40 @@ export function BlockLogger({ block, exercise, session }: BlockLoggerProps) {
         </div>
       )}
 
-      {/* Input */}
+      {/* Input controls */}
       <div className="flex flex-col gap-3">
-        <Stepper label="Weight" value={weight} onChange={setWeight} step={exercise.incrementLb} min={0} />
+        <div>
+          <Stepper label="Weight" value={weight} onChange={setWeight} step={exercise.incrementLb} min={0} />
+          {exercise.incrementLb > 0 && (
+            <PlateDisplay weight={weight} inventory={inventory} />
+          )}
+        </div>
         <Stepper label="Reps" value={reps} onChange={setReps} min={1} max={100} />
         <Stepper label="RIR" value={rir} onChange={setRir} min={0} max={10} />
       </div>
 
+      {/* Log button — states the full action */}
       <button
         onClick={handleLog}
         disabled={logging}
-        className="mt-4 w-full bg-green-600 hover:bg-green-500 active:bg-green-700 disabled:opacity-50 text-white font-bold py-4 rounded-2xl text-base min-h-[56px]"
+        className="mt-4 w-full text-white font-medium rounded-2xl text-base disabled:opacity-50"
+        style={{
+          minHeight: 50,
+          paddingTop: 14,
+          paddingBottom: 14,
+          background: accent,
+          fontVariantNumeric: 'tabular-nums',
+        }}
       >
-        Log Set
+        {exercise.isBodyweight
+          ? `Log set ${done + 1} · ${reps} reps`
+          : `Log set ${done + 1} · ${weight} lb × ${reps}`}
       </button>
 
       {showTimer && (
         <RestTimer
           seconds={block.restSeconds}
+          color={accent}
           onDone={() => setShowTimer(false)}
         />
       )}

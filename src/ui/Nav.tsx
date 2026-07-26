@@ -1,3 +1,6 @@
+import type { Day } from '../domain/plan'
+import { PALETTE, dayAccent } from './tokens'
+
 type Tab = 'workout' | 'progress' | 'body' | 'nutrition' | 'settings'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
@@ -11,25 +14,35 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 interface NavProps {
   current: Tab
   onChange: (tab: Tab) => void
+  sessionDay?: Day | null
 }
 
-export function Nav({ current, onChange }: NavProps) {
+export function Nav({ current, onChange, sessionDay }: NavProps) {
+  const accent = sessionDay ? dayAccent(sessionDay) : PALETTE.push
+
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-slate-800 border-t border-slate-700 flex safe-bottom">
-      {TABS.map(t => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`flex-1 flex flex-col items-center justify-center py-2 pt-3 min-h-[56px] text-xs gap-0.5 transition-colors ${
-            current === t.id
-              ? 'text-blue-400'
-              : 'text-slate-400 active:text-slate-200'
-          }`}
-        >
-          <span className="text-xl leading-none">{t.icon}</span>
-          <span>{t.label}</span>
-        </button>
-      ))}
+    <nav
+      className="fixed bottom-0 left-0 right-0 flex safe-bottom border-t"
+      style={{ background: PALETTE.panel, borderColor: PALETTE.line }}
+    >
+      {TABS.map(t => {
+        const active = current === t.id
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            className="flex-1 flex flex-col items-center justify-center py-2 pt-3 gap-0.5 text-xs"
+            style={{
+              minHeight: 56,
+              color: active ? accent : PALETTE.mute,
+              transition: 'color 0.15s',
+            }}
+          >
+            <span className="text-xl leading-none">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        )
+      })}
     </nav>
   )
 }

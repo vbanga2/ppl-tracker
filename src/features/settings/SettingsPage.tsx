@@ -1,5 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { exportDatabase, downloadBackup, importDatabase } from '../../data/backup'
+import { getPlateInventory, savePlateInventory } from '../../data/repo'
+import { DEFAULT_PLATES, type PlateInventory } from '../../domain/plates'
+import { PALETTE } from '../../ui/tokens'
 
 export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
@@ -32,28 +35,27 @@ export function SettingsPage() {
 
   return (
     <div className="px-4 py-6 max-w-lg mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Settings</h1>
+      <h1 className="text-2xl font-medium mb-6" style={{ color: PALETTE.fg }}>
+        Settings
+      </h1>
 
-      <section className="mb-8">
-        <h2 className="text-lg font-semibold mb-3 text-slate-300">Data Backup</h2>
+      <Section title="Plate inventory">
+        <PlateEditor />
+      </Section>
+
+      <Section title="Data backup">
         {lastBackup && (
-          <p className="text-xs text-slate-400 mb-3">
+          <p className="text-xs mb-3" style={{ color: PALETTE.mute }}>
             Last backup: {new Date(parseInt(lastBackup)).toLocaleString()}
           </p>
         )}
         <div className="flex flex-col gap-3">
-          <button
-            onClick={handleExport}
-            className="w-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-semibold py-4 rounded-2xl text-base min-h-[56px]"
-          >
-            Export Backup (JSON)
-          </button>
-          <button
-            onClick={() => fileRef.current?.click()}
-            className="w-full bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white font-semibold py-4 rounded-2xl text-base min-h-[56px]"
-          >
-            Import Backup
-          </button>
+          <ActionButton onClick={handleExport} primary>
+            Export backup (JSON)
+          </ActionButton>
+          <ActionButton onClick={() => fileRef.current?.click()}>
+            Import backup
+          </ActionButton>
           <input
             ref={fileRef}
             type="file"
@@ -63,19 +65,153 @@ export function SettingsPage() {
           />
         </div>
         {status && (
-          <p className="mt-3 text-sm text-slate-300 bg-slate-800 rounded-xl px-4 py-3">{status}</p>
+          <p className="mt-3 text-sm rounded-xl px-4 py-3" style={{ background: PALETTE.panel, color: PALETTE.dim }}>
+            {status}
+          </p>
         )}
-      </section>
+      </Section>
 
-      <section className="mb-8">
-        <h2 className="text-lg font-semibold mb-3 text-slate-300">Storage</h2>
+      <Section title="Storage">
         <StorageInfo />
-      </section>
+      </Section>
 
-      <section>
-        <h2 className="text-lg font-semibold mb-3 text-slate-300">About</h2>
-        <p className="text-slate-400 text-sm">PPL Tracker — personal edition. No account, no server, no cost.</p>
-      </section>
+      <Section title="About">
+        <p className="text-sm" style={{ color: PALETTE.mute }}>
+          PPL Tracker — personal edition. No account, no server, no cost.
+        </p>
+      </Section>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-8">
+      <h2 className="text-base font-medium mb-3" style={{ color: PALETTE.dim }}>
+        {title}
+      </h2>
+      {children}
+    </section>
+  )
+}
+
+function ActionButton({
+  onClick,
+  primary,
+  children,
+}: {
+  onClick: () => void
+  primary?: boolean
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full font-medium py-4 rounded-2xl text-base"
+      style={{
+        minHeight: 56,
+        background: primary ? PALETTE.push : PALETTE.panel,
+        color: primary ? '#ffffff' : PALETTE.fg,
+        border: primary ? 'none' : `1px solid ${PALETTE.line}`,
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function PlateEditor() {
+  const [inventory, setInventory] = useState<PlateInventory[]>([])
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    getPlateInventory().then(setInventory)
+  }, [])
+
+  function setPairs(lb: number, pairs: number) {
+    setInventory(inv => inv.map(p => (p.lb === lb ? { ...p, pairs } : p)))
+    setSaved(false)
+  }
+
+  async function handleSave() {
+    await savePlateInventory(inventory)
+    setSaved(true)
+  }
+
+  async function handleReset() {
+    setInventory(DEFAULT_PLATES)
+    await savePlateInventory(DEFAULT_PLATES)
+    setSaved(true)
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs" style={{ color: PALETTE.mute }}>
+        Pairs of each plate available at your gym. Used to show loading instructions per side.
+      </p>
+      <div
+        className="rounded-2xl overflow-hidden"
+        style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}
+      >
+        {inventory.map((plate, i) => (
+          <div
+            key={plate.lb}
+            className="flex items-center justify-between px-4 py-3"
+            style={{
+              borderBottom: i < inventory.length - 1 ? `1px solid ${PALETTE.line}` : undefined,
+            }}
+          >
+            <span className="text-sm font-medium" style={{ color: PALETTE.fg, fontVariantNumeric: 'tabular-nums' }}>
+              {plate.lb} lb
+            </span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setPairs(plate.lb, Math.max(0, plate.pairs - 1))}
+                className="flex items-center justify-center text-lg font-bold rounded-lg"
+                style={{ width: 36, height: 36, background: PALETTE.line, color: PALETTE.fg }}
+                aria-label="remove pair"
+              >
+                −
+              </button>
+              <span
+                className="text-sm font-medium w-8 text-center"
+                style={{ color: PALETTE.fg, fontVariantNumeric: 'tabular-nums' }}
+              >
+                {plate.pairs}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPairs(plate.lb, plate.pairs + 1)}
+                className="flex items-center justify-center text-lg font-bold rounded-lg"
+                style={{ width: 36, height: 36, background: PALETTE.line, color: PALETTE.fg }}
+                aria-label="add pair"
+              >
+                +
+              </button>
+              <span className="text-xs w-10" style={{ color: PALETTE.mute }}>
+                pairs
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          className="flex-1 font-medium py-3 rounded-xl text-sm"
+          style={{ minHeight: 44, background: PALETTE.push, color: '#ffffff' }}
+        >
+          {saved ? 'Saved' : 'Save inventory'}
+        </button>
+        <button
+          onClick={handleReset}
+          className="font-medium py-3 px-4 rounded-xl text-sm"
+          style={{ minHeight: 44, background: PALETTE.line, color: PALETTE.dim }}
+        >
+          Reset
+        </button>
+      </div>
     </div>
   )
 }
@@ -99,11 +235,16 @@ function StorageInfo() {
     <div>
       <button
         onClick={check}
-        className="bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white font-semibold py-3 px-6 rounded-xl text-sm min-h-[44px]"
+        className="font-medium py-3 px-6 rounded-xl text-sm"
+        style={{ minHeight: 44, background: PALETTE.panel, color: PALETTE.fg, border: `1px solid ${PALETTE.line}` }}
       >
         Check storage
       </button>
-      {info && <p className="mt-2 text-xs text-slate-400">{info}</p>}
+      {info && (
+        <p className="mt-2 text-xs" style={{ color: PALETTE.mute }}>
+          {info}
+        </p>
+      )}
     </div>
   )
 }

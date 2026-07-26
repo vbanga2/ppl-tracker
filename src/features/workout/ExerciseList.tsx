@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { DbExercise, DbBlock, DbSession } from '../../data/db'
 import { getExercisesByDay, getBlocksByExercise } from '../../data/repo'
 import { ExerciseCard } from './ExerciseCard'
+import { PALETTE } from '../../ui/tokens'
 
 interface ExerciseListProps {
   session: DbSession
@@ -32,17 +33,22 @@ export function ExerciseList({ session }: ExerciseListProps) {
   }, [session.day])
 
   if (loading) {
-    return <div className="px-4 py-8 text-slate-400 text-center">Loading exercises…</div>
+    return (
+      <div className="px-4 py-8 text-center" style={{ color: PALETTE.mute }}>
+        Loading exercises…
+      </div>
+    )
   }
 
   return (
-    <div className="divide-y divide-slate-700/50">
-      {items.map(({ exercise, blocks }) => (
+    <div>
+      {items.map(({ exercise, blocks }, index) => (
         <ExerciseCard
           key={exercise.id}
           exercise={exercise}
           blocks={blocks}
           session={session}
+          index={index}
         />
       ))}
     </div>
