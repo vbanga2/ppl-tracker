@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { DbBlock, DbBodyMetric, DbCardioLog, DbExercise, DbMealEntry, DbSession, DbSetLog } from './db'
+import type { DbBlock, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbMealEntry, DbSession, DbSetLog } from './db'
 import type { RepSpec, LoadSpec } from '../domain/plan'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 import { DEFAULT_PLATES, type PlateInventory } from '../domain/plates'
@@ -241,10 +241,40 @@ export async function getRecentSessions(limit = 20): Promise<DbSession[]> {
 
 export async function getLastSession(): Promise<DbSession | undefined> {
   return db.sessions
-    .orderBy('startedAt')
+    .orderBy('date')
     .reverse()
     .filter(s => s.deletedAt === null)
     .first()
+}
+
+export async function getSessionsForDate(date: string): Promise<DbSession[]> {
+  return db.sessions
+    .where('date')
+    .equals(date)
+    .filter(s => s.deletedAt === null)
+    .toArray()
+}
+
+export async function createSessionForDate(
+  day: 'push' | 'pull' | 'legs',
+  date: string,
+): Promise<DbSession> {
+  const session: DbSession = {
+    id: crypto.randomUUID(),
+    date,
+    day,
+    startedAt: new Date(date + 'T00:00:00').getTime(),
+    endedAt: null,
+    notes: '',
+    updatedAt: now(),
+    deletedAt: null,
+  }
+  await db.sessions.add(session)
+  return session
+}
+
+export async function updateSessionNotes(sessionId: string, notes: string): Promise<void> {
+  await db.sessions.update(sessionId, { notes, updatedAt: now() })
 }
 
 // ─── Set Logs ─────────────────────────────────────────────────────────────────
@@ -394,4 +424,144 @@ export async function getAllSetsForBlock(blockId: string): Promise<(DbSetLog & {
   const dateMap = new Map(sessions.map(s => [s?.id, s?.date ?? '']))
 
   return sets.map(s => ({ ...s, date: dateMap.get(s.sessionId) ?? '' }))
+}
+
+/** All non-deleted sets for every block belonging to an exercise.
+ *  Includes sets from soft-deleted blocks (historical record).
+ *  Excludes sets with deletedAt set, and sets from deleted sessions.
+ */
+export async function getAllSetsForExercise(
+  exerciseId: string,
+): Promise<(DbSetLog & { date: string; day: DbSession['day'] })[]> {
+  const blocks = await db.blocks.where('exerciseId').equals(exerciseId).toArray()
+  if (blocks.length === 0) return []
+
+  const allSets: DbSetLog[] = []
+  for (const block of blocks) {
+    const sets = await db.setLogs
+      .where('blockId')
+      .equals(block.id)
+      .filter(s => s.deletedAt === null)
+      .toArray()
+    allSets.push(...sets)
+  }
+  if (allSets.length === 0) return []
+
+  const sessionIds = [...new Set(allSets.map(s => s.sessionId))]
+  const sessions = await db.sessions.bulkGet(sessionIds)
+  const sessionMap = new Map(sessions.filter(Boolean).map(s => [s!.id, s!]))
+
+  return allSets
+    .filter(s => {
+      const sess = sessionMap.get(s.sessionId)
+      return sess && sess.deletedAt === null
+    })
+    .map(s => {
+      const sess = sessionMap.get(s.sessionId)!
+      return { ...s, date: sess.date, day: sess.day }
+    })
+}
+
+/** All non-deleted exercises sorted by day order then orderIndex. */
+export async function getAllExercises(): Promise<DbExercise[]> {
+  const exs = await db.exercises.filter(e => e.deletedAt === null).toArray()
+  const dayOrder: Record<string, number> = { push: 0, pull: 1, legs: 2 }
+  return exs.sort((a, b) => {
+    const dd = dayOrder[a.day] - dayOrder[b.day]
+    return dd !== 0 ? dd : a.orderIndex - b.orderIndex
+  })
+}
+
+/** All non-deleted sessions in chronological order. */
+export async function getAllSessionsOrdered(): Promise<DbSession[]> {
+  return db.sessions.orderBy('date').filter(s => s.deletedAt === null).toArray()
+}
+
+/** All non-deleted body metrics in chronological order (oldest first). */
+export async function getAllBodyMetrics(): Promise<DbBodyMetric[]> {
+  return db.bodyMetrics.orderBy('date').filter(m => m.deletedAt === null).toArray()
+}
+
+export async function getBodyMetricForDate(date: string): Promise<DbBodyMetric | undefined> {
+  return db.bodyMetrics
+    .where('date')
+    .equals(date)
+    .filter(m => m.deletedAt === null)
+    .first()
+}
+
+export async function deleteBodyMetric(id: string): Promise<void> {
+  await db.bodyMetrics.update(id, { deletedAt: now(), updatedAt: now() })
+}
+
+// ─── Exercise Notes ───────────────────────────────────────────────────────────
+
+export async function getExerciseNote(
+  sessionId: string,
+  exerciseId: string,
+): Promise<DbExerciseNote | undefined> {
+  return db.exerciseNotes
+    .where('[sessionId+exerciseId]')
+    .equals([sessionId, exerciseId])
+    .filter(n => n.deletedAt === null)
+    .first()
+    .catch(() =>
+      // Fallback if compound index not yet available
+      db.exerciseNotes
+        .filter(n => n.sessionId === sessionId && n.exerciseId === exerciseId && n.deletedAt === null)
+        .first()
+    )
+}
+
+export async function saveExerciseNote(note: {
+  sessionId: string
+  exerciseId: string
+  text: string
+}): Promise<void> {
+  const existing = await db.exerciseNotes
+    .filter(n => n.sessionId === note.sessionId && n.exerciseId === note.exerciseId && n.deletedAt === null)
+    .first()
+
+  if (existing) {
+    await db.exerciseNotes.update(existing.id, { text: note.text, updatedAt: now() })
+  } else {
+    const record: DbExerciseNote = {
+      id: crypto.randomUUID(),
+      sessionId: note.sessionId,
+      exerciseId: note.exerciseId,
+      text: note.text,
+      updatedAt: now(),
+      deletedAt: null,
+    }
+    await db.exerciseNotes.add(record)
+  }
+}
+
+export async function getExerciseNotesForSession(sessionId: string): Promise<DbExerciseNote[]> {
+  return db.exerciseNotes
+    .where('sessionId')
+    .equals(sessionId)
+    .filter(n => n.deletedAt === null)
+    .toArray()
+}
+
+// ─── Calendar bulk load ───────────────────────────────────────────────────────
+
+export async function loadCalendarData(): Promise<{
+  sessions: DbSession[]
+  setLogs: DbSetLog[]
+  exercises: DbExercise[]
+  blocks: DbBlock[]
+  bodyMetrics: DbBodyMetric[]
+  cardioLogs: DbCardioLog[]
+}> {
+  const [sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs] = await Promise.all([
+    db.sessions.filter(s => s.deletedAt === null).toArray(),
+    db.setLogs.filter(s => s.deletedAt === null).toArray(),
+    db.exercises.toArray(),
+    db.blocks.toArray(),
+    db.bodyMetrics.orderBy('date').filter(m => m.deletedAt === null).toArray(),
+    db.cardioLogs.filter(c => c.deletedAt === null).toArray(),
+  ])
+  return { sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs }
 }

@@ -30,6 +30,9 @@ export const PALETTE = {
   dim: '#b9c2cc',
   mute: '#7b8794',
   plate: '#ffffff',
+
+  // Personal record
+  pr: '#f5c518',
 } as const
 
 export function dayAccent(day: Day): string {

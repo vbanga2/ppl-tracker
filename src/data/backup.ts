@@ -13,12 +13,13 @@ export interface BackupData {
   routes: unknown[]
   foods: unknown[]
   mealEntries: unknown[]
+  exerciseNotes: unknown[]
 }
 
 export async function exportDatabase(): Promise<BackupData> {
   const [
     exercises, blocks, sessions, setLogs, cardioLogs,
-    bodyMetrics, healthSamples, routes, foods, mealEntries,
+    bodyMetrics, healthSamples, routes, foods, mealEntries, exerciseNotes,
   ] = await Promise.all([
     db.exercises.toArray(),
     db.blocks.toArray(),
@@ -30,6 +31,7 @@ export async function exportDatabase(): Promise<BackupData> {
     db.routes.toArray(),
     db.foods.toArray(),
     db.mealEntries.toArray(),
+    db.exerciseNotes.toArray(),
   ])
 
   return {
@@ -45,6 +47,7 @@ export async function exportDatabase(): Promise<BackupData> {
     routes,
     foods,
     mealEntries,
+    exerciseNotes,
   }
 }
 
@@ -78,7 +81,7 @@ export async function importDatabase(file: File): Promise<void> {
 
   const allTables = [
     db.exercises, db.blocks, db.sessions, db.setLogs, db.cardioLogs,
-    db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries,
+    db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries, db.exerciseNotes,
   ]
   await db.transaction('rw', allTables, async () => {
       await db.exercises.clear()
@@ -91,6 +94,7 @@ export async function importDatabase(file: File): Promise<void> {
       await db.routes.clear()
       await db.foods.clear()
       await db.mealEntries.clear()
+      await db.exerciseNotes.clear()
 
       if (data.exercises?.length) await db.exercises.bulkAdd(data.exercises as never[])
       if (data.blocks?.length) await db.blocks.bulkAdd(data.blocks as never[])
@@ -102,6 +106,7 @@ export async function importDatabase(file: File): Promise<void> {
       if (data.routes?.length) await db.routes.bulkAdd(data.routes as never[])
       if (data.foods?.length) await db.foods.bulkAdd(data.foods as never[])
       if (data.mealEntries?.length) await db.mealEntries.bulkAdd(data.mealEntries as never[])
+      if (data.exerciseNotes?.length) await db.exerciseNotes.bulkAdd(data.exerciseNotes as never[])
     },
   )
 }

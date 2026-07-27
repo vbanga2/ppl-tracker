@@ -142,6 +142,15 @@ export interface DbMealEntry {
   deletedAt: number | null
 }
 
+export interface DbExerciseNote {
+  id: string
+  sessionId: string
+  exerciseId: string
+  text: string
+  updatedAt: number
+  deletedAt: number | null
+}
+
 class PPLDatabase extends Dexie {
   meta!: EntityTable<DbMeta, 'key'>
   exercises!: EntityTable<DbExercise, 'id'>
@@ -154,6 +163,7 @@ class PPLDatabase extends Dexie {
   routes!: EntityTable<DbRoute, 'id'>
   foods!: EntityTable<DbFood, 'id'>
   mealEntries!: EntityTable<DbMealEntry, 'id'>
+  exerciseNotes!: EntityTable<DbExerciseNote, 'id'>
 
   constructor() {
     super('ppl-tracker')
@@ -176,6 +186,10 @@ class PPLDatabase extends Dexie {
     // Version 3: adds exerciseKey/blockKey indices and new reps/load fields on blocks
     this.version(3).stores({
       blocks: 'id, exerciseId, exerciseKey, blockKey, orderIndex, deletedAt',
+    })
+    // Version 4: adds exerciseNotes table
+    this.version(4).stores({
+      exerciseNotes: 'id, sessionId, exerciseId, deletedAt',
     })
   }
 }

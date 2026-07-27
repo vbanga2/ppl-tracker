@@ -6,6 +6,8 @@ import {
   getSetsForSession,
   getPreviousSetsForBlock,
   getPlateInventory,
+  getExerciseNote,
+  saveExerciseNote,
 } from '../../data/repo'
 import { formatRepSpec } from '../../domain/plan'
 import { BlockLogger } from './BlockLogger'
@@ -55,6 +57,7 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
   const [blockSetCounts, setBlockSetCounts] = useState<Map<string, number>>(new Map())
   const [lastTop, setLastTop] = useState<{ lb: number; reps: number } | null>(null)
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
+  const [exerciseNote, setExerciseNote] = useState('')
 
   const imageUrl = EXERCISE_IMAGES[exercise.imageKey]
   const accent = dayAccent(exercise.day)
@@ -132,9 +135,13 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
   }, [blocks, session.id])
 
   useEffect(() => {
-    if (expanded) loadSessionData()
-    else setSessionData(null)
-  }, [expanded, loadSessionData])
+    if (expanded) {
+      loadSessionData()
+      getExerciseNote(session.id, exercise.id).then(n => setExerciseNote(n?.text ?? ''))
+    } else {
+      setSessionData(null)
+    }
+  }, [expanded, loadSessionData, session.id, exercise.id])
 
   const handleSetChanged = useCallback((): Promise<void> => loadSessionData(), [loadSessionData])
 
@@ -162,6 +169,11 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm leading-tight" style={{ color: PALETTE.fg }}>
                 {index + 1}. {exercise.name}
+                {exerciseNote && (
+                  <span className="ml-2 text-xs" style={{ color: PALETTE.mute }}>
+                    · note
+                  </span>
+                )}
               </p>
               {firstBlock && (
                 <p className="text-xs mt-0.5" style={{ color: PALETTE.dim }}>
@@ -345,14 +357,35 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
             <div className="px-4 pb-4">
               <div
                 className="rounded-xl px-3 py-3"
-                style={{ background: 'rgba(255,176,70,0.1)', borderLeft: `3px solid #b85a00` }}
+                style={{ background: 'rgba(255,176,70,0.1)', borderLeft: `3px solid ${PALETTE.mute}` }}
               >
-                <p className="text-xs leading-relaxed" style={{ color: '#e8a855' }}>
+                <p className="text-xs leading-relaxed" style={{ color: PALETTE.dim }}>
                   {exercise.noteText}
                 </p>
               </div>
             </div>
           )}
+
+          {/* Exercise session note */}
+          <div className="px-4 pb-4">
+            <p className="text-xs mb-1" style={{ color: PALETTE.mute }}>
+              Session note
+            </p>
+            <textarea
+              value={exerciseNote}
+              onChange={e => setExerciseNote(e.target.value)}
+              onBlur={() => saveExerciseNote({ sessionId: session.id, exerciseId: exercise.id, text: exerciseNote })}
+              placeholder="Add a note for this exercise…"
+              rows={2}
+              className="w-full text-sm rounded-xl px-3 py-2 resize-none"
+              style={{
+                background: PALETTE.line,
+                color: PALETTE.fg,
+                border: 'none',
+                outline: 'none',
+              }}
+            />
+          </div>
         </div>
       )}
     </div>
