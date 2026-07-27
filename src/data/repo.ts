@@ -5,7 +5,7 @@ import { DEFAULT_PLATES, type PlateInventory } from '../domain/plates'
 
 // Bump this whenever SEED_EXERCISES or SEED_BLOCKS changes incompatibly.
 // The migration runs once on any device whose stored version is lower.
-const SEED_VERSION = 3
+const SEED_VERSION = 4
 
 function now(): number {
   return Date.now()
@@ -73,13 +73,14 @@ export async function ensureSeedCurrent(): Promise<void> {
           if (oldBlock) {
             // Update in-place — setLogs referencing this blockId remain valid.
             await db.blocks.update(oldBlock.id, {
+              exerciseKey: newBlock.exerciseKey,
+              blockKey: newBlock.blockKey,
               label: newBlock.label,
               targetSets: newBlock.targetSets,
-              repLow: newBlock.repLow,
-              repHigh: newBlock.repHigh,
+              reps: newBlock.reps,
+              load: newBlock.load,
               restSeconds: newBlock.restSeconds,
-              deriveFromBlockId: newBlock.deriveFromBlockId,
-              deriveMultiplier: newBlock.deriveMultiplier,
+              restLabel: newBlock.restLabel,
               setNotes: newBlock.setNotes,
               updatedAt: ts,
               deletedAt: null,

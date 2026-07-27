@@ -1,3 +1,7 @@
+import { BLOCKS, HEAVY_BLOCK_DEFAULT_INCREMENTS, type RepSpec, type LoadSpec } from '../../plan-prescriptions'
+export type { RepSpec, LoadSpec }
+export { HEAVY_BLOCK_DEFAULT_INCREMENTS }
+
 export type Day = 'push' | 'pull' | 'legs'
 
 export interface Exercise {
@@ -20,14 +24,15 @@ export interface Exercise {
 export interface Block {
   id: string
   exerciseId: string
+  exerciseKey: string
+  blockKey: string
   orderIndex: number
   label: string
   targetSets: number
-  repLow: number
-  repHigh: number | null
+  reps: RepSpec
+  load: LoadSpec
   restSeconds: number
-  deriveFromBlockId: string | null
-  deriveMultiplier: number | null
+  restLabel: string
   setNotes: string[]
 }
 
@@ -57,6 +62,15 @@ export function nextDay(lastDay: Day | null): Day {
   if (!lastDay) return 'push'
   const idx = DAY_ROTATION.indexOf(lastDay)
   return DAY_ROTATION[(idx + 1) % 3]
+}
+
+export function formatRepSpec(reps: RepSpec): string {
+  switch (reps.kind) {
+    case 'range': return `${reps.low} - ${reps.high}`
+    case 'fixed': return String(reps.reps)
+    case 'failure': return 'F'
+    case 'minToFailure': return `${reps.low} – F`
+  }
 }
 
 // ─── Seeded Plan ─────────────────────────────────────────────────────────────
@@ -327,267 +341,17 @@ export const SEED_EXERCISES: Exercise[] = [
   },
 ]
 
-export const SEED_BLOCKS: Block[] = [
-  // ── OHP blocks ──
-  {
-    id: 'blk-ohp-main',
-    exerciseId: 'ex-ohp',
-    orderIndex: 0,
-    label: 'Strength',
-    targetSets: 3,
-    repLow: 5,
-    repHigh: 8,
-    restSeconds: 180,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── BENCH PRESS blocks ──
-  {
-    id: 'blk-bench-main',
-    exerciseId: 'ex-bench',
-    orderIndex: 0,
-    label: 'Power',
-    targetSets: 3,
-    repLow: 5,
-    repHigh: 8,
-    restSeconds: 180,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  {
-    id: 'blk-bench-backoff',
-    exerciseId: 'ex-bench',
-    orderIndex: 1,
-    label: 'Hypertrophy',
-    targetSets: 2,
-    repLow: 8,
-    repHigh: 12,
-    restSeconds: 120,
-    deriveFromBlockId: 'blk-bench-main',
-    deriveMultiplier: 0.8,
-    setNotes: [],
-  },
-  // ── INCLINE BENCH blocks ──
-  {
-    id: 'blk-incline-strength',
-    exerciseId: 'ex-incline',
-    orderIndex: 0,
-    label: 'Strength',
-    targetSets: 1,
-    repLow: 5,
-    repHigh: 8,
-    restSeconds: 180,
-    deriveFromBlockId: 'blk-bench-main',
-    deriveMultiplier: 0.8,
-    setNotes: [],
-  },
-  {
-    id: 'blk-incline-hyper',
-    exerciseId: 'ex-incline',
-    orderIndex: 1,
-    label: 'Hypertrophy',
-    targetSets: 3,
-    repLow: 8,
-    repHigh: 12,
-    restSeconds: 120,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── CLOSE-GRIP BENCH blocks ──
-  {
-    id: 'blk-cgbp-main',
-    exerciseId: 'ex-cgbp',
-    orderIndex: 0,
-    label: 'Hypertrophy',
-    targetSets: 3,
-    repLow: 8,
-    repHigh: 12,
-    restSeconds: 120,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── SIDE FLY blocks ──
-  {
-    id: 'blk-sidefly-main',
-    exerciseId: 'ex-sidefly',
-    orderIndex: 0,
-    label: 'Hypertrophy',
-    targetSets: 3,
-    repLow: 12,
-    repHigh: 20,
-    restSeconds: 60,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── REAR DELT FLY blocks ──
-  {
-    id: 'blk-reardelt-main',
-    exerciseId: 'ex-reardelt',
-    orderIndex: 0,
-    label: 'Hypertrophy',
-    targetSets: 3,
-    repLow: 12,
-    repHigh: 20,
-    restSeconds: 60,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── DIPS blocks ──
-  {
-    id: 'blk-dips-main',
-    exerciseId: 'ex-dips',
-    orderIndex: 0,
-    label: 'Bodyweight',
-    targetSets: 3,
-    repLow: 5,
-    repHigh: null,
-    restSeconds: 120,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── DEADLIFT blocks ──
-  {
-    id: 'blk-dl-main',
-    exerciseId: 'ex-dl',
-    orderIndex: 0,
-    label: 'Power',
-    targetSets: 3,
-    repLow: 3,
-    repHigh: 5,
-    restSeconds: 240,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── SHRUG blocks (loaded at same weight as deadlift) ──
-  {
-    id: 'blk-shrug-main',
-    exerciseId: 'ex-shrug',
-    orderIndex: 0,
-    label: 'Strength',
-    targetSets: 3,
-    repLow: 8,
-    repHigh: 12,
-    restSeconds: 90,
-    deriveFromBlockId: 'blk-dl-main',
-    deriveMultiplier: 1.0,
-    setNotes: [],
-  },
-  // ── ROW blocks ──
-  {
-    id: 'blk-row-main',
-    exerciseId: 'ex-row',
-    orderIndex: 0,
-    label: 'Strength',
-    targetSets: 3,
-    repLow: 6,
-    repHigh: 10,
-    restSeconds: 120,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  {
-    id: 'blk-row-backoff',
-    exerciseId: 'ex-row',
-    orderIndex: 1,
-    label: 'Hypertrophy',
-    targetSets: 2,
-    repLow: 10,
-    repHigh: 15,
-    restSeconds: 90,
-    deriveFromBlockId: 'blk-row-main',
-    deriveMultiplier: 0.75,
-    setNotes: [],
-  },
-  // ── PULL-UP blocks ──
-  {
-    id: 'blk-pullup-main',
-    exerciseId: 'ex-pullup',
-    orderIndex: 0,
-    label: 'Bodyweight',
-    targetSets: 4,
-    repLow: 5,
-    repHigh: null,
-    restSeconds: 120,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── SQUAT blocks ──
-  {
-    id: 'blk-squat-main',
-    exerciseId: 'ex-squat',
-    orderIndex: 0,
-    label: 'Power',
-    targetSets: 3,
-    repLow: 5,
-    repHigh: 8,
-    restSeconds: 240,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  {
-    id: 'blk-squat-backoff',
-    exerciseId: 'ex-squat',
-    orderIndex: 1,
-    label: 'Hypertrophy',
-    targetSets: 2,
-    repLow: 8,
-    repHigh: 12,
-    restSeconds: 120,
-    deriveFromBlockId: 'blk-squat-main',
-    deriveMultiplier: 0.8,
-    setNotes: [],
-  },
-  // ── CALF RAISE blocks ──
-  {
-    id: 'blk-calf-main',
-    exerciseId: 'ex-calf',
-    orderIndex: 0,
-    label: 'Hypertrophy',
-    targetSets: 4,
-    repLow: 12,
-    repHigh: 20,
-    restSeconds: 60,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── HANGING LEG RAISE blocks ──
-  {
-    id: 'blk-hlr-main',
-    exerciseId: 'ex-hlr',
-    orderIndex: 0,
-    label: 'Work',
-    targetSets: 3,
-    repLow: 8,
-    repHigh: 15,
-    restSeconds: 90,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-  // ── CRUNCH BURNOUT blocks ──
-  {
-    id: 'blk-crunch-main',
-    exerciseId: 'ex-crunch',
-    orderIndex: 0,
-    label: 'Burnout',
-    targetSets: 1,
-    repLow: 10,
-    repHigh: null,
-    restSeconds: 0,
-    deriveFromBlockId: null,
-    deriveMultiplier: null,
-    setNotes: [],
-  },
-]
+export const SEED_BLOCKS: Block[] = BLOCKS.map(spec => ({
+  id: `blk-${spec.exerciseKey}-${spec.blockKey}`,
+  exerciseId: `ex-${spec.exerciseKey}`,
+  exerciseKey: spec.exerciseKey,
+  blockKey: spec.blockKey,
+  orderIndex: spec.orderIndex,
+  label: spec.label,
+  targetSets: spec.sets,
+  reps: spec.reps,
+  load: spec.load,
+  restSeconds: spec.restSeconds,
+  restLabel: spec.restLabel,
+  setNotes: spec.setNotes ?? [],
+}))

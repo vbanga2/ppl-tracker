@@ -10,6 +10,7 @@ import {
   getPlateInventory,
 } from '../../data/repo'
 import { suggestNext } from '../../domain/progression'
+import { formatRepSpec } from '../../domain/plan'
 import { calculatePlates, formatPlates } from '../../domain/plates'
 import type { PlateInventory } from '../../domain/plates'
 import { Stepper } from '../../ui/Stepper'
@@ -21,18 +22,6 @@ interface BlockLoggerProps {
   exercise: DbExercise
   session: DbSession
   onProgressUpdate?: (blockId: string, count: number) => void
-}
-
-function restLabel(s: number): string {
-  if (s === 0) return 'no rest'
-  if (s < 60) return `${s}s rest`
-  const m = Math.floor(s / 60)
-  const rem = s % 60
-  return rem === 0 ? `${m} min rest` : `${m}m ${rem}s rest`
-}
-
-function repRange(block: DbBlock): string {
-  return block.repHigh ? `${block.repLow}–${block.repHigh}` : `${block.repLow}+`
 }
 
 function PlateDisplay({
@@ -62,7 +51,7 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
   const [todaySets, setTodaySets] = useState<DbSetLog[]>([])
   const [prevSets, setPrevSets] = useState<DbSetLog[]>([])
   const [weight, setWeight] = useState(0)
-  const [reps, setReps] = useState(block.repLow)
+  const [reps, setReps] = useState(1)
   const [rir, setRir] = useState(2)
   const [suggestion, setSuggestion] = useState<{ message: string } | null>(null)
   const [showTimer, setShowTimer] = useState(false)
@@ -85,13 +74,14 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
     let sourceBlockTodaySets: DbSetLog[] | null = null
     let sourceBlockPrevSets: DbSetLog[] | null = null
 
-    if (block.deriveFromBlockId) {
+    if (block.load.kind === 'derived') {
+      const [fromExKey, fromBlkKey] = block.load.fromBlock.split('.')
       const allBlocks = await getAllBlocks()
-      const sourceBlock = allBlocks.find(b => b.id === block.deriveFromBlockId)
+      const sourceBlock = allBlocks.find(b => b.exerciseKey === fromExKey && b.blockKey === fromBlkKey)
       if (sourceBlock) {
         const allSessionSets = await getSetsForSession(session.id)
-        sourceBlockTodaySets = allSessionSets.filter(s => s.blockId === block.deriveFromBlockId)
-        sourceBlockPrevSets = await getPreviousSetsForBlock(block.deriveFromBlockId, session.id)
+        sourceBlockTodaySets = allSessionSets.filter(s => s.blockId === sourceBlock.id)
+        sourceBlockPrevSets = await getPreviousSetsForBlock(sourceBlock.id, session.id)
       }
     }
 
@@ -159,7 +149,7 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
             {block.label}
           </span>
           <p className="text-xs truncate" style={{ color: PALETTE.dim }}>
-            {target} × {repRange(block)} · {restLabel(block.restSeconds)}
+            {target} × {formatRepSpec(block.reps)} · {block.restLabel}
           </p>
         </div>
         <span

@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
+import type { RepSpec, LoadSpec } from '../domain/plan'
 
 export interface DbMeta {
   key: string
@@ -27,14 +28,15 @@ export interface DbExercise {
 export interface DbBlock {
   id: string
   exerciseId: string
+  exerciseKey: string
+  blockKey: string
   orderIndex: number
   label: string
   targetSets: number
-  repLow: number
-  repHigh: number | null
+  reps: RepSpec
+  load: LoadSpec
   restSeconds: number
-  deriveFromBlockId: string | null
-  deriveMultiplier: number | null
+  restLabel: string
   setNotes: string[]
   updatedAt: number
   deletedAt: number | null
@@ -170,6 +172,10 @@ class PPLDatabase extends Dexie {
     // Version 2: adds the meta table for seed versioning
     this.version(2).stores({
       meta: 'key',
+    })
+    // Version 3: adds exerciseKey/blockKey indices and new reps/load fields on blocks
+    this.version(3).stores({
+      blocks: 'id, exerciseId, exerciseKey, blockKey, orderIndex, deletedAt',
     })
   }
 }

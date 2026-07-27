@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import type { DbExercise, DbBlock, DbSession } from '../../data/db'
 import { getSetsForSession, getPreviousSetsForBlock } from '../../data/repo'
+import { formatRepSpec } from '../../domain/plan'
 import { BlockLogger } from './BlockLogger'
 import { EXERCISE_IMAGES } from '../../assets/exercises/index'
 import { PALETTE, dayAccent } from '../../ui/tokens'
@@ -77,11 +78,7 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
   }
 
   const firstBlock = blocks[0]
-  const repRange = firstBlock
-    ? firstBlock.repHigh
-      ? `${firstBlock.repLow}–${firstBlock.repHigh}`
-      : `${firstBlock.repLow}+`
-    : ''
+  const repRange = firstBlock ? formatRepSpec(firstBlock.reps) : ''
 
   return (
     <div className="border-b" style={{ borderColor: PALETTE.line }}>
