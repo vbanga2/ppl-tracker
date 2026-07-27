@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { StorageBanner } from './ui/StorageBanner'
 import { InstallGate } from './ui/InstallGate'
+import { UpdateBanner } from './ui/UpdateBanner'
 import { Nav } from './ui/Nav'
 import { WorkoutPage } from './features/workout/WorkoutPage'
 import { ProgressPage } from './features/progress/ProgressPage'
 import { BodyPage } from './features/body/BodyPage'
 import { NutritionPage } from './features/nutrition/NutritionPage'
 import { SettingsPage } from './features/settings/SettingsPage'
+import { saveAutoBackup } from './data/backup'
 import type { Day } from './domain/plan'
 
 type Tab = 'workout' | 'progress' | 'body' | 'nutrition' | 'settings'
@@ -19,6 +21,9 @@ export default function App({ storageGranted }: AppProps) {
   const [tab, setTab] = useState<Tab>('workout')
   const [showInstallGate, setShowInstallGate] = useState(false)
   const [sessionDay, setSessionDay] = useState<Day | null>(null)
+  const prevTabRef = useRef<Tab>('workout')
+  const sessionDayRef = useRef<Day | null>(null)
+  sessionDayRef.current = sessionDay
 
   useEffect(() => {
     const isStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone
@@ -28,6 +33,14 @@ export default function App({ storageGranted }: AppProps) {
     }
   }, [])
 
+  // Auto-backup when navigating away from an active workout session
+  useEffect(() => {
+    if (prevTabRef.current === 'workout' && tab !== 'workout' && sessionDayRef.current !== null) {
+      saveAutoBackup().catch(console.error)
+    }
+    prevTabRef.current = tab
+  }, [tab])
+
   function dismissInstall() {
     sessionStorage.setItem('installDismissed', '1')
     setShowInstallGate(false)
@@ -36,6 +49,7 @@ export default function App({ storageGranted }: AppProps) {
   return (
     <div className="flex flex-col min-h-svh" style={{ background: '#0f1216', color: '#e8ecf1' }}>
       {!storageGranted && <StorageBanner />}
+      <UpdateBanner />
       {showInstallGate && <InstallGate onDismiss={dismissInstall} />}
 
       <main

@@ -1,13 +1,37 @@
 import { useRef, useState, useEffect } from 'react'
-import { exportDatabase, downloadBackup, importDatabase } from '../../data/backup'
+import {
+  exportDatabase,
+  downloadBackup,
+  importDatabase,
+  listBackups,
+  restoreFromSnapshot,
+} from '../../data/backup'
+import type { DbBackupSnapshot } from '../../data/db'
 import { getPlateInventory, savePlateInventory } from '../../data/repo'
 import { DEFAULT_PLATES, type PlateInventory } from '../../domain/plates'
 import { PALETTE } from '../../ui/tokens'
 
+declare const __BUILD_DATE__: string
+
 export function SettingsPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<string | null>(null)
+  const [backups, setBackups] = useState<DbBackupSnapshot[]>([])
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+
   const lastBackup = localStorage.getItem('lastBackupAt')
+  const lastAutoBackup = localStorage.getItem('lastAutoBackupAt')
+
+  // Show export nudge if no manual export in 7 days or any session since last export
+  const exportIsStale = (() => {
+    if (!lastBackup) return true
+    const age = Date.now() - parseInt(lastBackup)
+    return age > 7 * 24 * 60 * 60 * 1000
+  })()
+
+  useEffect(() => {
+    listBackups().then(setBackups)
+  }, [])
 
   async function handleExport() {
     try {
@@ -25,13 +49,41 @@ export function SettingsPage() {
     if (!file) return
     try {
       await importDatabase(file)
-      setStatus('Import successful. Refresh to see your data.')
+      setStatus('Import successful. Your data has been merged.')
     } catch (err) {
       setStatus(`Import failed: ${err}`)
     } finally {
       e.target.value = ''
     }
   }
+
+  async function handleRestore(id: string) {
+    const snapshot = backups.find(b => b.id === id)
+    if (!snapshot) return
+    const ok = window.confirm(
+      `Restore snapshot from ${new Date(snapshot.savedAt).toLocaleString()}?\n\nThis merges the snapshot into your current data — nothing is deleted.`,
+    )
+    if (!ok) return
+    setRestoringId(id)
+    try {
+      await restoreFromSnapshot(id)
+      setStatus('Snapshot restored. Refresh to see your data.')
+    } catch (err) {
+      setStatus(`Restore failed: ${err}`)
+    } finally {
+      setRestoringId(null)
+    }
+  }
+
+  const buildDate = __BUILD_DATE__
+    ? new Date(__BUILD_DATE__).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '—'
 
   return (
     <div className="px-4 py-6 max-w-lg mx-auto">
@@ -44,9 +96,25 @@ export function SettingsPage() {
       </Section>
 
       <Section title="Data backup">
-        {lastBackup && (
+        {/* iOS warning */}
+        <div
+          className="rounded-xl px-4 py-3 mb-4 text-sm"
+          style={{ background: '#2a1a00', border: '1px solid #b85a00', color: '#fbe4c7' }}
+        >
+          <strong>Do not delete this app from your home screen</strong> — iOS deletes your
+          training data with it. To update, close the app and reopen it. Use export below to
+          keep an external backup.
+        </div>
+
+        {/* Export */}
+        {exportIsStale && (
+          <p className="text-xs mb-2" style={{ color: '#f5c518' }}>
+            ⚠ No backup in the last 7 days — export one now.
+          </p>
+        )}
+        {lastBackup && !exportIsStale && (
           <p className="text-xs mb-3" style={{ color: PALETTE.mute }}>
-            Last backup: {new Date(parseInt(lastBackup)).toLocaleString()}
+            Last export: {new Date(parseInt(lastBackup)).toLocaleString()}
           </p>
         )}
         <div className="flex flex-col gap-3">
@@ -54,7 +122,7 @@ export function SettingsPage() {
             Export backup (JSON)
           </ActionButton>
           <ActionButton onClick={() => fileRef.current?.click()}>
-            Import backup
+            Import / merge backup
           </ActionButton>
           <input
             ref={fileRef}
@@ -69,6 +137,49 @@ export function SettingsPage() {
             {status}
           </p>
         )}
+
+        {/* Auto-backup snapshots */}
+        {backups.length > 0 && (
+          <div className="mt-6">
+            <p className="text-xs mb-2" style={{ color: PALETTE.mute }}>
+              Automatic snapshots (last {backups.length})
+              {lastAutoBackup && (
+                <> · last saved {new Date(parseInt(lastAutoBackup)).toLocaleString()}</>
+              )}
+            </p>
+            <div
+              className="rounded-2xl overflow-hidden"
+              style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}
+            >
+              {backups.map((snap, i) => (
+                <div
+                  key={snap.id}
+                  className="flex items-center justify-between px-4 py-3"
+                  style={{
+                    borderBottom: i < backups.length - 1 ? `1px solid ${PALETTE.line}` : undefined,
+                  }}
+                >
+                  <span className="text-sm" style={{ color: PALETTE.fg }}>
+                    {snap.label}
+                  </span>
+                  <button
+                    onClick={() => void handleRestore(snap.id)}
+                    disabled={restoringId === snap.id}
+                    className="text-xs px-3 py-1 rounded-lg"
+                    style={{
+                      minHeight: 32,
+                      background: PALETTE.line,
+                      color: PALETTE.dim,
+                      opacity: restoringId === snap.id ? 0.5 : 1,
+                    }}
+                  >
+                    {restoringId === snap.id ? 'Restoring…' : 'Restore'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Section>
 
       <Section title="Storage">
@@ -76,8 +187,11 @@ export function SettingsPage() {
       </Section>
 
       <Section title="About">
-        <p className="text-sm" style={{ color: PALETTE.mute }}>
+        <p className="text-sm mb-2" style={{ color: PALETTE.mute }}>
           PPL Tracker — personal edition. No account, no server, no cost.
+        </p>
+        <p className="text-xs" style={{ color: PALETTE.mute }}>
+          Build: {buildDate}
         </p>
       </Section>
     </div>

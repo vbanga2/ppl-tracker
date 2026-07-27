@@ -39,3 +39,11 @@ src/
 
 ## Testing
 Run `npm test` before committing. Domain logic (progression, metrics) has unit tests in `src/domain/__tests__/`.
+
+## After every commit — mandatory
+1. `git push origin main`
+2. `git status` — confirm working tree is clean and branch is not ahead of origin.
+3. Confirm the GitHub Actions run is green: https://github.com/vbanga2/ppl-tracker/actions
+4. Confirm the change is visible on the deployed site: https://vbanga2.github.io/ppl-tracker/
+
+A commit that hasn't been pushed hasn't shipped. Never report code-complete without confirming the branch is in sync with origin and the Actions run is green.

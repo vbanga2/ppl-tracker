@@ -103,6 +103,15 @@ export interface DbHealthSample {
   deletedAt: number | null
 }
 
+export interface DbBackupSnapshot {
+  id: string
+  savedAt: number
+  sessionCount: number
+  setCount: number
+  label: string
+  dataJson: string
+}
+
 export interface DbRoute {
   id: string
   sessionId: string
@@ -167,6 +176,7 @@ class PPLDatabase extends Dexie {
   foods!: EntityTable<DbFood, 'id'>
   mealEntries!: EntityTable<DbMealEntry, 'id'>
   exerciseNotes!: EntityTable<DbExerciseNote, 'id'>
+  backups!: EntityTable<DbBackupSnapshot, 'id'>
 
   constructor() {
     super('ppl-tracker')
@@ -201,6 +211,10 @@ class PPLDatabase extends Dexie {
         if (record['caloriesBurned'] === undefined) record['caloriesBurned'] = null
         if (record['notes'] === undefined) record['notes'] = null
       })
+    })
+    // Version 6: adds backups table for automatic snapshots
+    this.version(6).stores({
+      backups: 'id, savedAt',
     })
   }
 }

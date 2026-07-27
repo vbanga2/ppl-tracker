@@ -477,6 +477,11 @@ export async function getAllSessionsOrdered(): Promise<DbSession[]> {
   return db.sessions.orderBy('date').filter(s => s.deletedAt === null).toArray()
 }
 
+/** All non-deleted cardio logs. */
+export async function getAllCardioLogs(): Promise<DbCardioLog[]> {
+  return db.cardioLogs.filter(c => c.deletedAt === null).toArray()
+}
+
 /** All non-deleted body metrics in chronological order (oldest first). */
 export async function getAllBodyMetrics(): Promise<DbBodyMetric[]> {
   return db.bodyMetrics.orderBy('date').filter(m => m.deletedAt === null).toArray()
@@ -492,6 +497,13 @@ export async function getBodyMetricForDate(date: string): Promise<DbBodyMetric |
 
 export async function deleteBodyMetric(id: string): Promise<void> {
   await db.bodyMetrics.update(id, { deletedAt: now(), updatedAt: now() })
+}
+
+export async function updateBodyMetric(
+  id: string,
+  fields: { date: string; weightLb: number; bodyFatPct: number | null },
+): Promise<void> {
+  await db.bodyMetrics.update(id, { ...fields, updatedAt: now() })
 }
 
 // ─── Exercise Notes ───────────────────────────────────────────────────────────

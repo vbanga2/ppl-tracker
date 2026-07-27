@@ -9,7 +9,10 @@ vi.mock('../../data/repo', () => ({
   getAllSessionsOrdered: vi.fn().mockResolvedValue([]),
   getAllBodyMetrics: vi.fn().mockResolvedValue([]),
   getAllSetsForExercise: vi.fn().mockResolvedValue([]),
+  getAllCardioLogs: vi.fn().mockResolvedValue([]),
   addBodyMetric: vi.fn().mockResolvedValue(undefined),
+  updateBodyMetric: vi.fn().mockResolvedValue(undefined),
+  deleteBodyMetric: vi.fn().mockResolvedValue(undefined),
 }))
 
 const PLACEHOLDER_RE = /coming soon|coming in M\d/i
