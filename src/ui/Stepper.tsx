@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from 'react'
 import { PALETTE } from './tokens'
 
 interface StepperProps {
@@ -9,7 +10,60 @@ interface StepperProps {
   label?: string
 }
 
+function fmt(n: number): string {
+  return String(n)
+}
+
 export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, label }: StepperProps) {
+  const [raw, setRaw] = useState(() => fmt(value))
+  const externalRef = useRef(value)
+
+  useEffect(() => {
+    if (value !== externalRef.current) {
+      externalRef.current = value
+      setRaw(fmt(value))
+    }
+  }, [value])
+
+  function clamp(n: number): number {
+    return Math.min(max, Math.max(min, n))
+  }
+
+  function push(n: number): number {
+    const c = clamp(n)
+    externalRef.current = c
+    onChange(c)
+    return c
+  }
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const text = e.target.value
+    if (!/^\d*\.?\d*$/.test(text)) return
+    setRaw(text)
+    const n = parseFloat(text)
+    if (!isNaN(n)) push(n)
+  }
+
+  function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
+    e.target.select()
+  }
+
+  function handleBlur() {
+    const n = parseFloat(raw)
+    const final = push(isNaN(n) ? min : n)
+    setRaw(fmt(final))
+  }
+
+  function decrement() {
+    const next = push(clamp(value - step))
+    setRaw(fmt(next))
+  }
+
+  function increment() {
+    const next = push(clamp(value + step))
+    setRaw(fmt(next))
+  }
+
   return (
     <div className="flex items-center gap-2">
       {label && (
@@ -19,7 +73,7 @@ export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, label 
       )}
       <button
         type="button"
-        onClick={() => onChange(Math.max(min, value - step))}
+        onClick={decrement}
         className="flex items-center justify-center text-xl font-bold select-none rounded-xl"
         style={{ width: 48, height: 48, minWidth: 48, background: PALETTE.line, color: PALETTE.fg }}
         aria-label="decrease"
@@ -27,12 +81,12 @@ export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, label 
         −
       </button>
       <input
-        type="number"
-        value={value}
-        onChange={e => {
-          const v = parseFloat(e.target.value)
-          if (!isNaN(v)) onChange(Math.min(max, Math.max(min, v)))
-        }}
+        type="text"
+        inputMode="decimal"
+        value={raw}
+        onChange={handleChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
         className="rounded-xl text-center text-lg font-semibold focus:outline-none tabular-nums"
         style={{
           width: 72,
@@ -41,11 +95,10 @@ export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, label 
           color: PALETTE.fg,
           fontVariantNumeric: 'tabular-nums',
         }}
-        inputMode="decimal"
       />
       <button
         type="button"
-        onClick={() => onChange(Math.min(max, value + step))}
+        onClick={increment}
         className="flex items-center justify-center text-xl font-bold select-none rounded-xl"
         style={{ width: 48, height: 48, minWidth: 48, background: PALETTE.line, color: PALETTE.fg }}
         aria-label="increase"

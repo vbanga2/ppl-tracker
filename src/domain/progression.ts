@@ -16,7 +16,10 @@ function startReps(reps: RepSpec, prevSets: SetLog[]): number {
       // Pre-fill with the first set's reps from the previous session (no fabricated floor).
       return prevSets.length > 0 ? prevSets[0].reps : 1
     case 'minToFailure': return reps.low
-    default: throw new Error(`Unhandled reps kind: ${(reps as RepSpec).kind}`)
+    default: {
+      const _: never = reps
+      return _
+    }
   }
 }
 
@@ -25,9 +28,12 @@ function isMaxed(reps: RepSpec, sets: SetLog[], targetSets: number): boolean {
   switch (reps.kind) {
     case 'range': return sets.every(s => s.reps >= reps.high)
     case 'fixed': return sets.every(s => s.reps >= reps.reps)
-    case 'failure': return false      // never auto-bump
-    case 'minToFailure': return false // never auto-bump — progress by beating rep count
-    default: throw new Error(`Unhandled reps kind: ${(reps as RepSpec).kind}`)
+    case 'failure': return false
+    case 'minToFailure': return false
+    default: {
+      const _: never = reps
+      return _
+    }
   }
 }
 

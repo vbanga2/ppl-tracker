@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Day } from '../../domain/plan'
 import { nextDay } from '../../domain/plan'
-import { getLastSession, getOrCreateTodaySession } from '../../data/repo'
+import { getLastSession, getOrCreateTodaySession, getSetsForSession, deleteSession } from '../../data/repo'
 import type { DbSession } from '../../data/db'
 import { DayPicker } from './DayPicker'
 import { ExerciseList } from './ExerciseList'
@@ -48,6 +48,27 @@ export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
     setSession(s)
     onDayReady?.(s.day)
     setShowPicker(false)
+  }
+
+  async function handleChangeDay(newDay: Day) {
+    const s = await getOrCreateTodaySession(newDay, todayDate())
+    setSession(s)
+    onDayReadyRef.current?.(s.day)
+    setShowPicker(false)
+  }
+
+  async function handleDeleteSession() {
+    if (!session) return
+    const sets = await getSetsForSession(session.id)
+    if (sets.length > 0) {
+      alert('Cannot delete a session with logged sets.')
+      return
+    }
+    await deleteSession(session.id)
+    setSession(null)
+    const last = await getLastSession()
+    setOverrideDay(nextDay(last?.day ?? null))
+    onDayReadyRef.current?.(null)
   }
 
   if (loading) {
@@ -104,18 +125,34 @@ export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
         className="px-4 py-4 flex items-center justify-between border-b"
         style={{ borderColor: PALETTE.line }}
       >
-        <div>
-          <h1
-            className="text-xl font-medium capitalize"
-            style={{ color: accent }}
-          >
-            {session.day} day
+        <button
+          onClick={() => setShowPicker(true)}
+          className="flex flex-col items-start text-left"
+          style={{ minHeight: 44 }}
+        >
+          <h1 className="text-xl font-medium capitalize" style={{ color: accent }}>
+            {session.day} day ›
           </h1>
           <p className="text-xs" style={{ color: PALETTE.mute }}>
-            {session.date}
+            {session.date} · tap to change
           </p>
-        </div>
+        </button>
+        <button
+          onClick={handleDeleteSession}
+          className="flex items-center justify-center text-lg"
+          style={{ width: 44, height: 44, color: PALETTE.mute }}
+          title="Delete empty session"
+          aria-label="Delete session"
+        >
+          ✕
+        </button>
       </div>
+      {showPicker && (
+        <DayPicker
+          onSelect={handleChangeDay}
+          onCancel={() => setShowPicker(false)}
+        />
+      )}
       <ExerciseList session={session} />
       <CardioLogger session={session} />
     </div>

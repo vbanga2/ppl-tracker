@@ -1,5 +1,6 @@
 import { db } from './db'
 import type { DbBlock, DbBodyMetric, DbCardioLog, DbExercise, DbMealEntry, DbSession, DbSetLog } from './db'
+import type { RepSpec, LoadSpec } from '../domain/plan'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 import { DEFAULT_PLATES, type PlateInventory } from '../domain/plates'
 
@@ -9,6 +10,46 @@ const SEED_VERSION = 4
 
 function now(): number {
   return Date.now()
+}
+
+function legacyRestLabel(s: number): string {
+  if (s === 0) return '—'
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  if (m === 0) return `${s} s`
+  if (rem === 0) return `${m} min`
+  return `${m} m ${rem} s`
+}
+
+/**
+ * Blocks written before SEED_VERSION 4 have repLow/repHigh instead of reps/load.
+ * Convert them at read time so the rest of the app never sees the old shape.
+ */
+export function normalizeBlock(raw: DbBlock): DbBlock {
+  const r = raw as unknown as Record<string, unknown>
+  if (r['reps'] != null && r['load'] != null) return raw
+
+  const repLow = (r['repLow'] as number | undefined) ?? 1
+  const repHigh = (r['repHigh'] as number | null | undefined) ?? null
+
+  const reps: RepSpec =
+    repHigh != null
+      ? { kind: 'range', low: repLow, high: repHigh }
+      : { kind: 'failure' }
+
+  const load: LoadSpec = { kind: 'increment', lb: 5 }
+
+  return {
+    ...raw,
+    exerciseKey:
+      (r['exerciseKey'] as string | undefined) ?? raw.exerciseId.replace('ex-', ''),
+    blockKey: (r['blockKey'] as string | undefined) ?? 'main',
+    reps,
+    load,
+    restLabel:
+      (r['restLabel'] as string | undefined) ?? legacyRestLabel(raw.restSeconds),
+    setNotes: (r['setNotes'] as string[] | undefined) ?? [],
+  }
 }
 
 // ─── Seed / Migration ─────────────────────────────────────────────────────────
@@ -138,15 +179,17 @@ export async function getExercisesByDay(day: string): Promise<DbExercise[]> {
 }
 
 export async function getBlocksByExercise(exerciseId: string): Promise<DbBlock[]> {
-  return db.blocks
+  const blocks = await db.blocks
     .where('exerciseId')
     .equals(exerciseId)
     .filter(b => b.deletedAt === null)
     .sortBy('orderIndex')
+  return blocks.map(normalizeBlock)
 }
 
 export async function getAllBlocks(): Promise<DbBlock[]> {
-  return db.blocks.filter(b => b.deletedAt === null).toArray()
+  const blocks = await db.blocks.filter(b => b.deletedAt === null).toArray()
+  return blocks.map(normalizeBlock)
 }
 
 // ─── Sessions ─────────────────────────────────────────────────────────────────
@@ -158,7 +201,7 @@ export async function getOrCreateTodaySession(
   const existing = await db.sessions
     .where('date')
     .equals(todayDate)
-    .filter(s => s.deletedAt === null)
+    .filter(s => s.deletedAt === null && s.day === day)
     .first()
 
   if (existing) return existing
@@ -180,6 +223,11 @@ export async function getOrCreateTodaySession(
 export async function endSession(sessionId: string): Promise<void> {
   const ts = now()
   await db.sessions.update(sessionId, { endedAt: ts, updatedAt: ts })
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const ts = now()
+  await db.sessions.update(sessionId, { deletedAt: ts, updatedAt: ts })
 }
 
 export async function getRecentSessions(limit = 20): Promise<DbSession[]> {

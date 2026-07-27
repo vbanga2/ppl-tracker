@@ -70,7 +70,10 @@ export function formatRepSpec(reps: RepSpec): string {
     case 'fixed': return String(reps.reps)
     case 'failure': return 'F'
     case 'minToFailure': return `${reps.low} – F`
-    default: throw new Error(`Unhandled reps kind: ${(reps as RepSpec).kind}`)
+    default: {
+      const _: never = reps
+      return String(_)
+    }
   }
 }
 

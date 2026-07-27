@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { ensureSeedCurrent } from './data/repo.ts'
+import { ErrorBoundary } from './ui/ErrorBoundary.tsx'
 
 async function bootstrap() {
   // P0: request durable storage immediately
@@ -19,7 +20,9 @@ async function bootstrap() {
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <App storageGranted={storageGranted} />
+      <ErrorBoundary>
+        <App storageGranted={storageGranted} />
+      </ErrorBoundary>
     </StrictMode>,
   )
 }
