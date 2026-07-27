@@ -87,6 +87,7 @@ export function Stepper({ value, onChange, min = 0, max = 9999, step = 1, label 
         onChange={handleChange}
         onFocus={handleFocus}
         onBlur={handleBlur}
+        aria-label={label}
         className="rounded-xl text-center text-lg font-semibold focus:outline-none tabular-nums"
         style={{
           width: 72,

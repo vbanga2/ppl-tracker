@@ -1,36 +1,30 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import type { DbBlock, DbExercise, DbSession, DbSetLog } from '../../data/db'
-import {
-  getSetsForBlock,
-  getPreviousSetsForBlock,
-  logSet,
-  deleteSet,
-  getAllBlocks,
-  getSetsForSession,
-  getPlateInventory,
-} from '../../data/repo'
+import type { PlateInventory } from '../../domain/plates'
+import { logSet, deleteSet } from '../../data/repo'
 import { suggestNext } from '../../domain/progression'
 import { formatRepSpec } from '../../domain/plan'
 import { calculatePlates, formatPlates } from '../../domain/plates'
-import type { PlateInventory } from '../../domain/plates'
 import { Stepper } from '../../ui/Stepper'
 import { RestTimer } from './RestTimer'
 import { PALETTE, blockColors, dayAccent } from '../../ui/tokens'
 
-interface BlockLoggerProps {
+export interface BlockLoggerProps {
   block: DbBlock
   exercise: DbExercise
   session: DbSession
-  onProgressUpdate?: (blockId: string, count: number) => void
+  /** Full block list — used to resolve derived-load source blocks in memory */
+  allBlocks: DbBlock[]
+  /** Today's logged sets keyed by blockId, pre-loaded by ExerciseCard */
+  todayByBlock: Map<string, DbSetLog[]>
+  /** Previous-session sets keyed by blockId, pre-loaded by ExerciseCard */
+  prevSetsByBlock: Map<string, DbSetLog[]>
+  inventory: PlateInventory[]
+  /** Called after a set is logged or deleted so ExerciseCard can refresh */
+  onSetChanged: () => Promise<void>
 }
 
-function PlateDisplay({
-  weight,
-  inventory,
-}: {
-  weight: number
-  inventory: PlateInventory[]
-}) {
+function PlateDisplay({ weight, inventory }: { weight: number; inventory: PlateInventory[] }) {
   if (weight <= 0) return null
   const { perSide, achievable, nearestBelow } = calculatePlates(weight, inventory)
   if (!achievable) {
@@ -47,61 +41,77 @@ function PlateDisplay({
   )
 }
 
-export function BlockLogger({ block, exercise, session, onProgressUpdate }: BlockLoggerProps) {
-  const [todaySets, setTodaySets] = useState<DbSetLog[]>([])
-  const [prevSets, setPrevSets] = useState<DbSetLog[]>([])
+export function BlockLogger({
+  block,
+  exercise,
+  session,
+  allBlocks,
+  todayByBlock,
+  prevSetsByBlock,
+  inventory,
+  onSetChanged,
+}: BlockLoggerProps) {
   const [weight, setWeight] = useState(0)
   const [reps, setReps] = useState(1)
   const [rir, setRir] = useState(2)
-  const [suggestion, setSuggestion] = useState<{ message: string } | null>(null)
   const [showTimer, setShowTimer] = useState(false)
   const [logging, setLogging] = useState(false)
-  const [inventory, setInventory] = useState<PlateInventory[]>([])
 
-  useEffect(() => {
-    getPlateInventory().then(setInventory)
-  }, [])
+  // Flipped true on first user keystroke; prevents suggestion from overwriting input.
+  // Reset to false only after a set is successfully logged or when the block changes.
+  const touchedRef = useRef(false)
 
-  const loadSets = useCallback(async () => {
-    const [today, prev] = await Promise.all([
-      getSetsForBlock(block.id, session.id),
-      getPreviousSetsForBlock(block.id, session.id),
-    ])
-    setTodaySets(today)
-    setPrevSets(prev)
-    onProgressUpdate?.(block.id, today.length)
+  const todaySets = todayByBlock.get(block.id) ?? []
+  const todaySetsCount = todaySets.length
 
-    let sourceBlockTodaySets: DbSetLog[] | null = null
-    let sourceBlockPrevSets: DbSetLog[] | null = null
+  // All suggestion logic runs in memory — no DB reads.
+  const suggestion = useMemo(() => {
+    const today = todayByBlock.get(block.id) ?? []
+    const prev = prevSetsByBlock.get(block.id) ?? []
+
+    let srcTodaySets: DbSetLog[] | null = null
+    let srcPrevSets: DbSetLog[] | null = null
 
     if (block.load.kind === 'derived') {
-      const [fromExKey, fromBlkKey] = block.load.fromBlock.split('.')
-      const allBlocks = await getAllBlocks()
-      const sourceBlock = allBlocks.find(b => b.exerciseKey === fromExKey && b.blockKey === fromBlkKey)
-      if (sourceBlock) {
-        const allSessionSets = await getSetsForSession(session.id)
-        sourceBlockTodaySets = allSessionSets.filter(s => s.blockId === sourceBlock.id)
-        sourceBlockPrevSets = await getPreviousSetsForBlock(sourceBlock.id, session.id)
+      const [exKey, blkKey] = block.load.fromBlock.split('.')
+      const src = allBlocks.find(b => b.exerciseKey === exKey && b.blockKey === blkKey)
+      if (src) {
+        srcTodaySets = todayByBlock.get(src.id) ?? null
+        srcPrevSets = prevSetsByBlock.get(src.id) ?? null
       }
     }
 
-    const s = suggestNext(block, today, sourceBlockTodaySets, prev, sourceBlockPrevSets, exercise.incrementLb)
-    setSuggestion(s)
-    if (today.length === 0) {
-      setWeight(s.weightLb)
-      setReps(s.reps)
-    }
-  }, [block, session.id, exercise.incrementLb, onProgressUpdate])
+    return suggestNext(block, today, srcTodaySets, prev, srcPrevSets, exercise.incrementLb)
+  }, [block, exercise.incrementLb, allBlocks, todayByBlock, prevSetsByBlock])
 
+  // Reset touched when switching blocks
   useEffect(() => {
-    loadSets()
-  }, [loadSets])
+    touchedRef.current = false
+  }, [block.id])
+
+  // Initialize weight/reps from suggestion — only before the user edits and only when no sets are logged yet
+  useEffect(() => {
+    if (touchedRef.current) return
+    if (todaySetsCount > 0) return
+    setWeight(suggestion.weightLb)
+    setReps(suggestion.reps)
+  }, [suggestion, todaySetsCount])
+
+  function handleWeightChange(v: number) {
+    touchedRef.current = true
+    setWeight(v)
+  }
+
+  function handleRepsChange(v: number) {
+    touchedRef.current = true
+    setReps(v)
+  }
 
   async function handleLog() {
     if (logging) return
     setLogging(true)
     try {
-      const set: Omit<DbSetLog, 'updatedAt' | 'deletedAt'> = {
+      await logSet({
         id: crypto.randomUUID(),
         sessionId: session.id,
         blockId: block.id,
@@ -110,9 +120,9 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
         reps,
         rir,
         loggedAt: Date.now(),
-      }
-      await logSet(set)
-      await loadSets()
+      })
+      touchedRef.current = false
+      await onSetChanged()
       setShowTimer(true)
     } catch (err) {
       alert(`Failed to save set: ${err}`)
@@ -123,23 +133,21 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
 
   async function handleDelete(setId: string) {
     await deleteSet(setId)
-    await loadSets()
+    await onSetChanged()
   }
 
   const colors = blockColors(block.label)
   const accent = dayAccent(exercise.day)
   const done = todaySets.length
   const target = block.targetSets
+  const prevSets = prevSetsByBlock.get(block.id) ?? []
 
   return (
     <div
       className="rounded-2xl px-4 py-4"
-      style={{
-        background: PALETTE.panel,
-        borderLeft: `3px solid ${colors.border}`,
-      }}
+      style={{ background: PALETTE.panel, borderLeft: `3px solid ${colors.border}` }}
     >
-      {/* Block header — label pill + prescription */}
+      {/* Block header */}
       <div className="flex items-center justify-between mb-3 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span
@@ -167,11 +175,7 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
             <span
               key={i}
               className="text-xs px-2 py-0.5 rounded"
-              style={{
-                fontVariantNumeric: 'tabular-nums',
-                background: PALETTE.line,
-                color: PALETTE.mute,
-              }}
+              style={{ fontVariantNumeric: 'tabular-nums', background: PALETTE.line, color: PALETTE.mute }}
             >
               {s.weightLb} × {s.reps}
             </span>
@@ -183,14 +187,12 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
       )}
 
       {/* Suggestion */}
-      {suggestion && (
-        <p
-          className="text-xs mb-3 rounded-xl px-3 py-2"
-          style={{ color: colors.pillText || PALETTE.dim, background: colors.pillBg }}
-        >
-          {suggestion.message}
-        </p>
-      )}
+      <p
+        className="text-xs mb-3 rounded-xl px-3 py-2"
+        style={{ color: colors.pillText || PALETTE.dim, background: colors.pillBg }}
+      >
+        {suggestion.message}
+      </p>
 
       {/* Today's logged sets */}
       {todaySets.length > 0 && (
@@ -228,16 +230,14 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
       {/* Input controls */}
       <div className="flex flex-col gap-3">
         <div>
-          <Stepper label="Weight" value={weight} onChange={setWeight} step={exercise.incrementLb} min={0} />
-          {exercise.incrementLb > 0 && (
-            <PlateDisplay weight={weight} inventory={inventory} />
-          )}
+          <Stepper label="Weight" value={weight} onChange={handleWeightChange} step={exercise.incrementLb} min={0} />
+          {exercise.incrementLb > 0 && <PlateDisplay weight={weight} inventory={inventory} />}
         </div>
-        <Stepper label="Reps" value={reps} onChange={setReps} min={1} max={100} />
+        <Stepper label="Reps" value={reps} onChange={handleRepsChange} min={1} max={100} />
         <Stepper label="RIR" value={rir} onChange={setRir} min={0} max={10} />
       </div>
 
-      {/* Log button — states the full action */}
+      {/* Log button */}
       <button
         onClick={handleLog}
         disabled={logging}
@@ -256,11 +256,7 @@ export function BlockLogger({ block, exercise, session, onProgressUpdate }: Bloc
       </button>
 
       {showTimer && (
-        <RestTimer
-          seconds={block.restSeconds}
-          color={accent}
-          onDone={() => setShowTimer(false)}
-        />
+        <RestTimer seconds={block.restSeconds} color={accent} onDone={() => setShowTimer(false)} />
       )}
     </div>
   )

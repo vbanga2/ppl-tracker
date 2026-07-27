@@ -1,10 +1,23 @@
-import { useState, useEffect, useMemo } from 'react'
-import type { DbExercise, DbBlock, DbSession } from '../../data/db'
-import { getSetsForSession, getPreviousSetsForBlock } from '../../data/repo'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import type { DbExercise, DbBlock, DbSession, DbSetLog } from '../../data/db'
+import type { PlateInventory } from '../../domain/plates'
+import {
+  getAllBlocks,
+  getSetsForSession,
+  getPreviousSetsForBlock,
+  getPlateInventory,
+} from '../../data/repo'
 import { formatRepSpec } from '../../domain/plan'
 import { BlockLogger } from './BlockLogger'
 import { EXERCISE_IMAGES } from '../../assets/exercises/index'
 import { PALETTE, dayAccent } from '../../ui/tokens'
+
+export interface SessionData {
+  allBlocks: DbBlock[]
+  todayByBlock: Map<string, DbSetLog[]>
+  prevSetsByBlock: Map<string, DbSetLog[]>
+  inventory: PlateInventory[]
+}
 
 interface ExerciseCardProps {
   exercise: DbExercise
@@ -41,6 +54,7 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
   const [showForm, setShowForm] = useState(false)
   const [blockSetCounts, setBlockSetCounts] = useState<Map<string, number>>(new Map())
   const [lastTop, setLastTop] = useState<{ lb: number; reps: number } | null>(null)
+  const [sessionData, setSessionData] = useState<SessionData | null>(null)
 
   const imageUrl = EXERCISE_IMAGES[exercise.imageKey]
   const accent = dayAccent(exercise.day)
@@ -49,20 +63,18 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
   const totalTarget = blocks.reduce((s, b) => s + b.targetSets, 0)
   const totalDone = [...blockSetCounts.values()].reduce((s, n) => s + n, 0)
 
-  // Load initial set counts for this exercise in the current session
+  // Initial set-count load for the collapsed progress badge
   useEffect(() => {
     getSetsForSession(session.id).then(all => {
-      const newMap = new Map<string, number>()
+      const m = new Map<string, number>()
       for (const s of all) {
-        if (blockIds.has(s.blockId)) {
-          newMap.set(s.blockId, (newMap.get(s.blockId) ?? 0) + 1)
-        }
+        if (blockIds.has(s.blockId)) m.set(s.blockId, (m.get(s.blockId) ?? 0) + 1)
       }
-      setBlockSetCounts(newMap)
+      setBlockSetCounts(m)
     })
   }, [session.id, blockIds])
 
-  // Load last top set for collapsed preview
+  // Last-top load for the collapsed preview row
   useEffect(() => {
     if (blocks.length === 0) return
     Promise.all(blocks.map(b => getPreviousSetsForBlock(b.id, session.id))).then(results => {
@@ -73,22 +85,70 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
     })
   }, [blocks, session.id])
 
-  function handleProgressUpdate(blockId: string, count: number) {
-    setBlockSetCounts(m => new Map(m).set(blockId, count))
-  }
+  /**
+   * Single IndexedDB read for all data the expanded card needs.
+   * Called once on expand and after every set log/delete.
+   */
+  const loadSessionData = useCallback(async () => {
+    const [allBlocks, allSessionSets, inventory] = await Promise.all([
+      getAllBlocks(),
+      getSetsForSession(session.id),
+      getPlateInventory(),
+    ])
+
+    const todayByBlock = new Map<string, DbSetLog[]>()
+    for (const set of allSessionSets) {
+      const arr = todayByBlock.get(set.blockId) ?? []
+      arr.push(set)
+      todayByBlock.set(set.blockId, arr)
+    }
+
+    // Collect block IDs we need prev sets for: own blocks + derived source blocks
+    const prevBlockIds = new Set<string>(blocks.map(b => b.id))
+    for (const block of blocks) {
+      if (block.load.kind === 'derived') {
+        const [exKey, blkKey] = block.load.fromBlock.split('.')
+        const src = allBlocks.find(b => b.exerciseKey === exKey && b.blockKey === blkKey)
+        if (src) prevBlockIds.add(src.id)
+      }
+    }
+
+    const prevEntries = await Promise.all(
+      [...prevBlockIds].map(async id => {
+        const prev = await getPreviousSetsForBlock(id, session.id)
+        return [id, prev] as [string, DbSetLog[]]
+      }),
+    )
+    const prevSetsByBlock = new Map(prevEntries)
+
+    // Keep the collapsed-view count badge in sync
+    const newCounts = new Map<string, number>()
+    for (const block of blocks) {
+      newCounts.set(block.id, todayByBlock.get(block.id)?.length ?? 0)
+    }
+    setBlockSetCounts(newCounts)
+
+    setSessionData({ allBlocks, todayByBlock, prevSetsByBlock, inventory })
+  }, [blocks, session.id])
+
+  useEffect(() => {
+    if (expanded) loadSessionData()
+    else setSessionData(null)
+  }, [expanded, loadSessionData])
+
+  const handleSetChanged = useCallback((): Promise<void> => loadSessionData(), [loadSessionData])
 
   const firstBlock = blocks[0]
   const repRange = firstBlock ? formatRepSpec(firstBlock.reps) : ''
 
   return (
     <div className="border-b" style={{ borderColor: PALETTE.line }}>
-      {/* Header — always visible, day-colored */}
+      {/* Header — always visible */}
       <button
         onClick={() => setExpanded(e => !e)}
         className="w-full text-left"
         style={{ minHeight: 56 }}
       >
-        {/* Collapsed: thumbnail + name + prescription + last top */}
         {!expanded && (
           <div className="flex items-center gap-3 px-4 py-3">
             {imageUrl && (
@@ -121,7 +181,10 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
               {totalDone > 0 && (
                 <span
                   className="text-xs"
-                  style={{ color: totalDone >= totalTarget ? accent : PALETTE.mute, fontVariantNumeric: 'tabular-nums' }}
+                  style={{
+                    color: totalDone >= totalTarget ? accent : PALETTE.mute,
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
                 >
                   {totalDone}/{totalTarget}
                 </span>
@@ -131,12 +194,8 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
           </div>
         )}
 
-        {/* Expanded header — day-colored band */}
         {expanded && (
-          <div
-            className="flex items-center gap-3 px-4 py-3"
-            style={{ background: accent }}
-          >
+          <div className="flex items-center gap-3 px-4 py-3" style={{ background: accent }}>
             <span
               className="text-sm font-medium shrink-0"
               style={{ color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums' }}
@@ -158,7 +217,6 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
 
       {expanded && (
         <div>
-          {/* Illustration on white plate */}
           {imageUrl && (
             <div className="flex items-center justify-center" style={{ background: PALETTE.plate }}>
               <img
@@ -170,20 +228,28 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
             </div>
           )}
 
-          {/* Prescription blocks */}
           <div className="px-4 py-4 flex flex-col gap-4">
-            {blocks.map(block => (
-              <BlockLogger
-                key={block.id}
-                block={block}
-                exercise={exercise}
-                session={session}
-                onProgressUpdate={handleProgressUpdate}
-              />
-            ))}
+            {sessionData ? (
+              blocks.map(block => (
+                <BlockLogger
+                  key={block.id}
+                  block={block}
+                  exercise={exercise}
+                  session={session}
+                  allBlocks={sessionData.allBlocks}
+                  todayByBlock={sessionData.todayByBlock}
+                  prevSetsByBlock={sessionData.prevSetsByBlock}
+                  inventory={sessionData.inventory}
+                  onSetChanged={handleSetChanged}
+                />
+              ))
+            ) : (
+              <div className="py-4 text-center" style={{ color: PALETTE.mute, fontSize: 14 }}>
+                Loading…
+              </div>
+            )}
           </div>
 
-          {/* Muscle badges */}
           <div className="px-4 py-3 flex flex-col gap-2 border-t" style={{ borderColor: PALETTE.line }}>
             <MuscleBadge
               role="Main"
@@ -205,7 +271,6 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
             />
           </div>
 
-          {/* Watch form + Form cues buttons */}
           <div
             className="px-4 pb-4 flex gap-2 border-t pt-3"
             style={{ borderColor: PALETTE.line }}
@@ -265,7 +330,6 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
             )}
           </div>
 
-          {/* Form cues — collapsed by default */}
           {showForm && exercise.formText && (
             <div className="px-4 pb-4">
               <p
@@ -277,7 +341,6 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
             </div>
           )}
 
-          {/* Note callout */}
           {exercise.noteText && (
             <div className="px-4 pb-4">
               <div
