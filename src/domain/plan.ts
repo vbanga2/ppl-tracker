@@ -1,4 +1,4 @@
-import { BLOCKS, HEAVY_BLOCK_DEFAULT_INCREMENTS, type RepSpec, type LoadSpec } from '../../plan-prescriptions'
+import { BLOCKS, HEAVY_BLOCK_DEFAULT_INCREMENTS, type RepSpec, type LoadSpec, type BlockSpec } from './plan-prescriptions'
 export type { RepSpec, LoadSpec }
 export { HEAVY_BLOCK_DEFAULT_INCREMENTS }
 
@@ -70,6 +70,7 @@ export function formatRepSpec(reps: RepSpec): string {
     case 'fixed': return String(reps.reps)
     case 'failure': return 'F'
     case 'minToFailure': return `${reps.low} – F`
+    default: throw new Error(`Unhandled reps kind: ${(reps as RepSpec).kind}`)
   }
 }
 
@@ -341,7 +342,7 @@ export const SEED_EXERCISES: Exercise[] = [
   },
 ]
 
-export const SEED_BLOCKS: Block[] = BLOCKS.map(spec => ({
+export const SEED_BLOCKS: Block[] = BLOCKS.map((spec: BlockSpec) => ({
   id: `blk-${spec.exerciseKey}-${spec.blockKey}`,
   exerciseId: `ex-${spec.exerciseKey}`,
   exerciseKey: spec.exerciseKey,

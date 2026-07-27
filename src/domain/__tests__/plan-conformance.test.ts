@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { BLOCKS } from '../../../plan-prescriptions'
+import { BLOCKS } from '../plan-prescriptions'
 import { SEED_BLOCKS } from '../plan'
 
 describe('plan conformance — every block in plan-prescriptions.ts is correctly seeded', () => {
