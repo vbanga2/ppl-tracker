@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { DbBlock, DbExercise, DbSession, DbSetLog } from '../../data/db'
 import type { PlateInventory } from '../../domain/plates'
-import { logSet, deleteSet } from '../../data/repo'
+import { logSet, deleteSet, getAllSetsForExercise } from '../../data/repo'
 import { suggestNext } from '../../domain/progression'
 import { formatRepSpec } from '../../domain/plan'
 import { calculatePlates, formatPlates } from '../../domain/plates'
+import { computeExercisePRHistory } from '../../domain/records'
+import type { SetWithMeta } from '../../domain/records'
 import { Stepper } from '../../ui/Stepper'
 import { RestTimer } from './RestTimer'
 import { PALETTE, blockColors, dayAccent } from '../../ui/tokens'
@@ -56,10 +58,14 @@ export function BlockLogger({
   const [rir, setRir] = useState(2)
   const [showTimer, setShowTimer] = useState(false)
   const [logging, setLogging] = useState(false)
+  const [prBanner, setPrBanner] = useState<string | null>(null)
 
   // Flipped true on first user keystroke; prevents suggestion from overwriting input.
   // Reset to false only after a set is successfully logged or when the block changes.
   const touchedRef = useRef(false)
+  const prTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => { if (prTimerRef.current) clearTimeout(prTimerRef.current) }, [])
 
   const todaySets = todayByBlock.get(block.id) ?? []
   const todaySetsCount = todaySets.length
@@ -124,6 +130,27 @@ export function BlockLogger({
       touchedRef.current = false
       await onSetChanged()
       setShowTimer(true)
+
+      // PR check — one read after logging, compares against full history
+      const allSets = await getAllSetsForExercise(exercise.id)
+      if (allSets.length > 0) {
+        const meta: SetWithMeta[] = allSets.map(s => ({
+          id: s.id, blockId: s.blockId, exerciseId: exercise.id,
+          date: s.date, sessionId: s.sessionId,
+          weightLb: s.weightLb, reps: s.reps,
+          isBodyweight: exercise.isBodyweight, bodyweightLb: 0,
+        }))
+        const prHistory = computeExercisePRHistory(meta)
+        if (prHistory.has(session.date)) {
+          const pr = prHistory.get(session.date)!
+          const text = exercise.isBodyweight
+            ? 'Personal record!'
+            : `Personal record — e1RM ${pr.bestE1RM.toFixed(1)} lb`
+          if (prTimerRef.current) clearTimeout(prTimerRef.current)
+          setPrBanner(text)
+          prTimerRef.current = setTimeout(() => setPrBanner(null), 4000)
+        }
+      }
     } catch (err) {
       alert(`Failed to save set: ${err}`)
     } finally {
@@ -224,6 +251,16 @@ export function BlockLogger({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* PR banner */}
+      {prBanner && (
+        <div
+          className="mb-3 rounded-xl px-3 py-2 text-sm font-medium text-center"
+          style={{ background: `${PALETTE.pr}22`, color: PALETTE.pr, border: `1px solid ${PALETTE.pr}55` }}
+        >
+          ★ {prBanner}
         </div>
       )}
 
