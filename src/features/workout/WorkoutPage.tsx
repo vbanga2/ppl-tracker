@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import type { Day } from '../../domain/plan'
 import { nextDay } from '../../domain/plan'
-import { getLastSession, getOrCreateTodaySession, getSetsForSession, deleteSession } from '../../data/repo'
+import {
+  getLastSession,
+  getOrCreateTodaySession,
+  getSetsForSession,
+  deleteSet,
+  getCardioForSession,
+  deleteCardio,
+  deleteSession,
+} from '../../data/repo'
 import type { DbSession } from '../../data/db'
 import { DayPicker } from './DayPicker'
 import { ExerciseList } from './ExerciseList'
@@ -59,11 +67,21 @@ export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
 
   async function handleDeleteSession() {
     if (!session) return
-    const sets = await getSetsForSession(session.id)
-    if (sets.length > 0) {
-      alert('Cannot delete a session with logged sets.')
-      return
+    const [sets, cardio] = await Promise.all([
+      getSetsForSession(session.id),
+      getCardioForSession(session.id),
+    ])
+    const hasData = sets.length > 0 || cardio.length > 0
+    if (hasData) {
+      const parts: string[] = []
+      if (sets.length > 0) parts.push(`${sets.length} set${sets.length !== 1 ? 's' : ''}`)
+      if (cardio.length > 0) parts.push('cardio')
+      const ok = window.confirm(
+        `This session has ${parts.join(' and ')} logged. Delete everything?`,
+      )
+      if (!ok) return
     }
+    await Promise.all([...sets.map(s => deleteSet(s.id)), ...cardio.map(c => deleteCardio(c.id))])
     await deleteSession(session.id)
     setSession(null)
     const last = await getLastSession()

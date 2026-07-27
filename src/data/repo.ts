@@ -298,6 +298,11 @@ export async function logCardio(cardio: Omit<DbCardioLog, 'updatedAt' | 'deleted
   await db.cardioLogs.add({ ...cardio, updatedAt: now(), deletedAt: null })
 }
 
+export async function deleteCardio(cardioId: string): Promise<void> {
+  const ts = now()
+  await db.cardioLogs.update(cardioId, { deletedAt: ts, updatedAt: ts })
+}
+
 export async function getCardioForSession(sessionId: string): Promise<DbCardioLog[]> {
   return db.cardioLogs
     .where('sessionId')
