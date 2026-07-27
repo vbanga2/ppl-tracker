@@ -38,7 +38,10 @@ export default function App({ storageGranted }: AppProps) {
       {!storageGranted && <StorageBanner />}
       {showInstallGate && <InstallGate onDismiss={dismissInstall} />}
 
-      <main className="flex-1 overflow-y-auto pb-20">
+      <main
+        className="flex-1 overflow-y-auto"
+        style={{ paddingBottom: 'calc(56px + max(env(safe-area-inset-bottom), 8px))' }}
+      >
         {tab === 'workout' && (
           <WorkoutPage onDayReady={setSessionDay} />
         )}

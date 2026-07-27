@@ -22,8 +22,12 @@ export function Nav({ current, onChange, sessionDay }: NavProps) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 flex safe-bottom border-t"
-      style={{ background: PALETTE.panel, borderColor: PALETTE.line }}
+      className="fixed bottom-0 left-0 right-0 flex border-t"
+      style={{
+        background: PALETTE.panel,
+        borderColor: PALETTE.line,
+        paddingBottom: 'max(env(safe-area-inset-bottom), 8px)',
+      }}
     >
       {TABS.map(t => {
         const active = current === t.id
