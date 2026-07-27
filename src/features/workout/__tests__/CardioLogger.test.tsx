@@ -4,7 +4,6 @@ import '@testing-library/jest-dom'
 import { CardioLogger } from '../CardioLogger'
 import type { DbCardioLog, DbSession } from '../../../data/db'
 
-// Mock all repo functions that CardioLogger touches
 vi.mock('../../../data/repo', () => ({
   getCardioForSession: vi.fn(),
   getLastPullSprintSets: vi.fn(),
@@ -12,7 +11,6 @@ vi.mock('../../../data/repo', () => ({
   deleteCardio: vi.fn().mockResolvedValue(undefined),
 }))
 
-// Import mocked functions for per-test setup
 import {
   getCardioForSession,
   getLastPullSprintSets,
@@ -42,13 +40,16 @@ const pushSession: DbSession = {
   deletedAt: null,
 }
 
-const existingSprintLog: DbCardioLog = {
+const sprintLog: DbCardioLog = {
   id: 'clog-1',
   sessionId: 'sess-pull',
   kind: 'sprints',
+  activityType: 'sprints',
   sets: 6,
   minutes: 25,
   distanceMi: 0,
+  caloriesBurned: null,
+  notes: null,
   routeId: null,
   updatedAt: 0,
   deletedAt: null,
@@ -58,25 +59,54 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-// ─── Loading existing log ────────────────────────────────────────────────────
+// ─── Collapsed by default ────────────────────────────────────────────────────
 
-describe('CardioLogger — existing log on mount', () => {
-  it('shows logged state when session already has cardio', async () => {
-    vi.mocked(getCardioForSession).mockResolvedValue([existingSprintLog])
+describe('CardioLogger — collapsed by default', () => {
+  it('starts collapsed', async () => {
+    vi.mocked(getCardioForSession).mockResolvedValue([])
+    vi.mocked(getLastPullSprintSets).mockResolvedValue(null)
 
     render(<CardioLogger session={pullSession} />)
     await act(async () => {})
 
-    expect(screen.getByText(/cardio logged/i)).toBeInTheDocument()
-    expect(screen.getByText('6 sprint sets · 25 min')).toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: /toggle cardio section/i })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('shows the ✕ undo button in the logged state', async () => {
-    vi.mocked(getCardioForSession).mockResolvedValue([existingSprintLog])
+  it('shows summary when collapsed with a logged entry', async () => {
+    vi.mocked(getCardioForSession).mockResolvedValue([sprintLog])
+    vi.mocked(getLastPullSprintSets).mockResolvedValue(null)
 
     render(<CardioLogger session={pullSession} />)
     await act(async () => {})
 
+    // Summary visible in collapsed state
+    expect(screen.getByText(/6 sprint sets/i)).toBeInTheDocument()
+  })
+})
+
+// ─── Existing log on mount ────────────────────────────────────────────────────
+
+describe('CardioLogger — existing log on mount', () => {
+  it('shows logged entries when session already has cardio', async () => {
+    vi.mocked(getCardioForSession).mockResolvedValue([sprintLog])
+
+    render(<CardioLogger session={pullSession} />)
+    await act(async () => {})
+
+    // Expand to see entries
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
+
+    expect(screen.getByText(/sprints/i)).toBeInTheDocument()
+  })
+
+  it('shows undo (✕) button for each logged entry', async () => {
+    vi.mocked(getCardioForSession).mockResolvedValue([sprintLog])
+
+    render(<CardioLogger session={pullSession} />)
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
     expect(screen.getByRole('button', { name: /undo cardio log/i })).toBeInTheDocument()
   })
 })
@@ -85,52 +115,38 @@ describe('CardioLogger — existing log on mount', () => {
 
 describe('CardioLogger — undo', () => {
   it('undo calls deleteCardio with the correct ID', async () => {
-    vi.mocked(getCardioForSession).mockResolvedValue([existingSprintLog])
+    vi.mocked(getCardioForSession)
+      .mockResolvedValueOnce([sprintLog])   // initial load
+      .mockResolvedValueOnce([])            // after delete
     vi.mocked(getLastPullSprintSets).mockResolvedValue(null)
 
     render(<CardioLogger session={pullSession} />)
     await act(async () => {})
 
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
     fireEvent.click(screen.getByRole('button', { name: /undo cardio log/i }))
     await act(async () => {})
 
     expect(vi.mocked(deleteCardio)).toHaveBeenCalledWith('clog-1')
   })
 
-  it('undo returns the card to the log form', async () => {
-    vi.mocked(getCardioForSession).mockResolvedValue([existingSprintLog])
+  it('undo removes the entry from the list', async () => {
+    vi.mocked(getCardioForSession)
+      .mockResolvedValueOnce([sprintLog])
+      .mockResolvedValueOnce([])
     vi.mocked(getLastPullSprintSets).mockResolvedValue(null)
 
     render(<CardioLogger session={pullSession} />)
     await act(async () => {})
 
-    fireEvent.click(screen.getByRole('button', { name: /undo cardio log/i }))
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
+    const undoBtn = screen.getByRole('button', { name: /undo cardio log/i })
+    fireEvent.click(undoBtn)
     await act(async () => {})
 
-    // Back to the form — "Log Cardio" button should be visible
-    expect(screen.getByText('Log Cardio')).toBeInTheDocument()
-  })
-
-  it('logging then immediately undoing removes the entry', async () => {
-    vi.mocked(getCardioForSession).mockResolvedValue([])
-    vi.mocked(getLastPullSprintSets).mockResolvedValue(5)
-
-    render(<CardioLogger session={pullSession} />)
-    await act(async () => {})
-
-    // Log cardio
-    fireEvent.click(screen.getByText('Log Cardio'))
-    await act(async () => {})
-
-    expect(screen.getByText(/cardio logged/i)).toBeInTheDocument()
-    expect(vi.mocked(logCardio)).toHaveBeenCalledTimes(1)
-
-    // Undo
-    fireEvent.click(screen.getByRole('button', { name: /undo cardio log/i }))
-    await act(async () => {})
-
-    expect(vi.mocked(deleteCardio)).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Log Cardio')).toBeInTheDocument()
+    // Entry row is gone; only the "Add cardio" button remains
+    expect(screen.getByText(/\+ add cardio/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /undo cardio log/i })).not.toBeInTheDocument()
   })
 })
 
@@ -138,34 +154,34 @@ describe('CardioLogger — undo', () => {
 
 describe('CardioLogger — sprint suggestion correctness after undo', () => {
   it('suggestion reflects last REAL session after undoing, not the undone one', async () => {
-    // Scenario: last real session = 4 sets; today session already has 5 sets logged (about to undo)
-    const loggedFiveSets: DbCardioLog = {
-      ...existingSprintLog,
-      id: 'clog-today',
-      sets: 5,
-      minutes: 0,
-    }
-    vi.mocked(getCardioForSession).mockResolvedValue([loggedFiveSets])
-    // After undo, getLastPullSprintSets returns 4 (the soft-deleted 5-set entry is excluded)
-    vi.mocked(getLastPullSprintSets).mockResolvedValue(4)
+    const loggedFiveSets: DbCardioLog = { ...sprintLog, id: 'clog-today', sets: 5 }
+
+    vi.mocked(getCardioForSession)
+      .mockResolvedValueOnce([loggedFiveSets])
+      .mockResolvedValueOnce([])
+    vi.mocked(getLastPullSprintSets)
+      .mockResolvedValueOnce(null)  // initial mount (no suggestion needed; entry exists)
+      .mockResolvedValueOnce(4)     // after undo: last real session was 4 sets
 
     render(<CardioLogger session={pullSession} />)
     await act(async () => {})
 
-    // Verify we're in logged state
-    expect(screen.getByText(/cardio logged/i)).toBeInTheDocument()
-
-    // Undo
+    // Expand and undo
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
     fireEvent.click(screen.getByRole('button', { name: /undo cardio log/i }))
     await act(async () => {})
 
-    // Suggestion should be nextSprintSets(4) = 5, NOT nextSprintSets(5) = 6
-    const setsInput = screen.getByRole('textbox', { name: /sets/i })
-    expect(setsInput).toHaveValue('5')
+    // Open the add-entry form to see the suggested sets value
+    fireEvent.click(screen.getByText(/\+ add cardio/i))
+
+    // Sprint suggestion should be nextSprintSets(4) = 5
+    expect(screen.getByText(/suggested: 5 sets/i)).toBeInTheDocument()
   })
 
   it('getLastPullSprintSets is called again after undo to re-derive suggestion', async () => {
-    vi.mocked(getCardioForSession).mockResolvedValue([existingSprintLog])
+    vi.mocked(getCardioForSession)
+      .mockResolvedValueOnce([sprintLog])
+      .mockResolvedValueOnce([])
     vi.mocked(getLastPullSprintSets).mockResolvedValue(3)
 
     render(<CardioLogger session={pullSession} />)
@@ -173,20 +189,64 @@ describe('CardioLogger — sprint suggestion correctness after undo', () => {
 
     const callsBefore = vi.mocked(getLastPullSprintSets).mock.calls.length
 
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
     fireEvent.click(screen.getByRole('button', { name: /undo cardio log/i }))
     await act(async () => {})
 
-    const callsAfter = vi.mocked(getLastPullSprintSets).mock.calls.length
-    expect(callsAfter).toBeGreaterThan(callsBefore)
+    expect(vi.mocked(getLastPullSprintSets).mock.calls.length).toBeGreaterThan(callsBefore)
   })
 
-  it('push session form is shown (no sprint logic for push)', async () => {
+  it('push session shows no sprint suggestion', async () => {
     vi.mocked(getCardioForSession).mockResolvedValue([])
 
     render(<CardioLogger session={pushSession} />)
     await act(async () => {})
 
-    expect(screen.getByText('Cardio (optional)')).toBeInTheDocument()
-    expect(screen.queryByRole('textbox', { name: /sets/i })).not.toBeInTheDocument()
+    // Expand and open add form
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
+    fireEvent.click(screen.getByText(/\+ add cardio/i))
+
+    expect(screen.queryByText(/suggested:.*sets/i)).not.toBeInTheDocument()
+    expect(vi.mocked(getLastPullSprintSets)).not.toHaveBeenCalled()
+  })
+})
+
+// ─── Multiple entries ──────────────────────────────────────────────────────────
+
+describe('CardioLogger — multiple entries', () => {
+  it('shows all logged entries', async () => {
+    const secondEntry: DbCardioLog = {
+      ...sprintLog,
+      id: 'clog-2',
+      activityType: 'elliptical',
+      kind: 'other',
+      sets: 0,
+      minutes: 30,
+    }
+    vi.mocked(getCardioForSession).mockResolvedValue([sprintLog, secondEntry])
+
+    render(<CardioLogger session={pullSession} />)
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
+
+    expect(screen.getAllByRole('button', { name: /undo cardio log/i })).toHaveLength(2)
+  })
+
+  it('logCardio is called when adding a new entry', async () => {
+    vi.mocked(getCardioForSession)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([sprintLog])
+    vi.mocked(getLastPullSprintSets).mockResolvedValue(5)
+
+    render(<CardioLogger session={pullSession} />)
+    await act(async () => {})
+
+    fireEvent.click(screen.getByRole('button', { name: /toggle cardio section/i }))
+    fireEvent.click(screen.getByText(/\+ add cardio/i))
+    fireEvent.click(screen.getByText(/log cardio/i))
+    await act(async () => {})
+
+    expect(vi.mocked(logCardio)).toHaveBeenCalledTimes(1)
   })
 })

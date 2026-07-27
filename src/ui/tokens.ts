@@ -33,6 +33,11 @@ export const PALETTE = {
 
   // Personal record
   pr: '#f5c518',
+
+  // Cardio — purple, matches plan PDF bar; used regardless of day type
+  cardioPillBg: '#efe7ff',
+  cardioPillText: '#4c2ac7',
+  cardioBorder: '#8b5cf6',
 } as const
 
 export function dayAccent(day: Day): string {

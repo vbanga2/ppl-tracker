@@ -189,3 +189,47 @@ describe('plan', () => {
     expect(nextDay('legs')).toBe('push')
   })
 })
+
+describe('derived-load plan cases', () => {
+  it('bench hypertrophy suggests 0.8 × today bench power top set', () => {
+    const block = makeBlock({
+      reps: { kind: 'failure' },
+      load: { kind: 'derived', fromBlock: 'bench.power', mult: 0.8 },
+    })
+    const benchPowerToday = [makeSet({ weightLb: 200, reps: 5 })]
+    const s = suggestNext(block, [], benchPowerToday, [], null, 5)
+    expect(s.weightLb).toBe(160) // 200 × 0.8 = 160
+  })
+
+  it('incline hypertrophy suggests 0.65 × bench power today', () => {
+    const block = makeBlock({
+      reps: { kind: 'failure' },
+      load: { kind: 'derived', fromBlock: 'bench.power', mult: 0.65 },
+    })
+    const benchPowerToday = [makeSet({ weightLb: 200, reps: 5 })]
+    const s = suggestNext(block, [], benchPowerToday, [], null, 5)
+    expect(s.weightLb).toBe(130) // 200 × 0.65 = 130
+  })
+
+  it('shrug hypertrophy matches deadlift strength load (mult 1.0)', () => {
+    const block = makeBlock({
+      reps: { kind: 'minToFailure', low: 8 },
+      load: { kind: 'derived', fromBlock: 'dl.strength', mult: 1 },
+    })
+    const dlStrengthToday = [makeSet({ weightLb: 315, reps: 4 })]
+    const s = suggestNext(block, [], dlStrengthToday, [], null, 5)
+    expect(s.weightLb).toBe(315) // 315 × 1.0 = 315
+  })
+
+  it('derived load rounds to nearest 2.5 lb (incline from 185 lb bench power)', () => {
+    // 185 × 0.65 = 120.25 → round(120.25, 2.5) = 120
+    const block = makeBlock({
+      reps: { kind: 'failure' },
+      load: { kind: 'derived', fromBlock: 'bench.power', mult: 0.65 },
+    })
+    const benchPowerToday = [makeSet({ weightLb: 185, reps: 5 })]
+    const s = suggestNext(block, [], benchPowerToday, [], null, 5)
+    expect(s.weightLb).toBe(120)
+    expect(s.weightLb % 2.5).toBe(0)
+  })
+})

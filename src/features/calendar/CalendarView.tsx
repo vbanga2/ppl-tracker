@@ -48,6 +48,15 @@ function isFuture(dateStr: string, today: string): boolean {
   return dateStr > today
 }
 
+function bodyweightAtDate(sortedMetrics: DbBodyMetric[], date: string): number {
+  let bw = 0
+  for (const m of sortedMetrics) {
+    if (m.date <= date) bw = m.weightLb
+    else break
+  }
+  return bw
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface CalendarRawData {
@@ -198,11 +207,13 @@ interface DayDetailPanelProps {
 }
 
 function formatCardioEntry(c: DbCardioLog): string {
-  if (c.kind === 'sprints') return `${c.sets} sprint sets${c.minutes ? ` · ${c.minutes} min` : ''}`
+  const type = c.activityType ?? c.kind
+  if (type === 'sprints') return `${c.sets} sprint sets${c.minutes ? ` · ${c.minutes} min` : ''}`
   const parts = []
   if (c.minutes) parts.push(`${c.minutes} min`)
   if (c.distanceMi) parts.push(`${c.distanceMi} mi`)
-  return parts.join(' · ') || c.kind
+  const label = type.charAt(0).toUpperCase() + type.slice(1)
+  return parts.length > 0 ? `${label} · ${parts.join(' · ')}` : label
 }
 
 function DayDetailPanel({
@@ -553,7 +564,9 @@ export function CalendarView({ onClose, onSessionChanged }: CalendarViewProps) {
           weightLb: sl.weightLb,
           reps: sl.reps,
           isBodyweight: exercise.isBodyweight,
-          bodyweightLb: 0,
+          bodyweightLb: exercise.isBodyweight
+            ? bodyweightAtDate(raw.bodyMetrics, sess.date)
+            : 0,
         }]
       })
 

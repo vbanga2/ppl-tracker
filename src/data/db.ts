@@ -70,9 +70,12 @@ export interface DbCardioLog {
   id: string
   sessionId: string
   kind: 'sprints' | 'treadmill' | 'other'
+  activityType: string
   sets: number
   minutes: number
   distanceMi: number
+  caloriesBurned: number | null
+  notes: string | null
   routeId: string | null
   updatedAt: number
   deletedAt: number | null
@@ -190,6 +193,14 @@ class PPLDatabase extends Dexie {
     // Version 4: adds exerciseNotes table
     this.version(4).stores({
       exerciseNotes: 'id, sessionId, exerciseId, deletedAt',
+    })
+    // Version 5: adds activityType, caloriesBurned, notes to cardioLogs
+    this.version(5).stores({}).upgrade(async tx => {
+      await tx.table('cardioLogs').toCollection().modify((record: Record<string, unknown>) => {
+        if (!record['activityType']) record['activityType'] = record['kind']
+        if (record['caloriesBurned'] === undefined) record['caloriesBurned'] = null
+        if (record['notes'] === undefined) record['notes'] = null
+      })
     })
   }
 }
