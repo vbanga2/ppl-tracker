@@ -13,6 +13,16 @@ vi.mock('../../data/repo', () => ({
   addBodyMetric: vi.fn().mockResolvedValue(undefined),
   updateBodyMetric: vi.fn().mockResolvedValue(undefined),
   deleteBodyMetric: vi.fn().mockResolvedValue(undefined),
+  countBodyMetricsWithDefaultFat: vi.fn().mockResolvedValue(0),
+  clearDefaultBodyFat: vi.fn().mockResolvedValue(undefined),
+  getAllBodyMeasurements: vi.fn().mockResolvedValue([]),
+  addBodyMeasurement: vi.fn().mockResolvedValue(undefined),
+  updateBodyMeasurement: vi.fn().mockResolvedValue(undefined),
+  deleteBodyMeasurement: vi.fn().mockResolvedValue(undefined),
+  getAllProgressPhotos: vi.fn().mockResolvedValue([]),
+  addProgressPhoto: vi.fn().mockResolvedValue(undefined),
+  updateProgressPhoto: vi.fn().mockResolvedValue(undefined),
+  deleteProgressPhoto: vi.fn().mockResolvedValue(undefined),
 }))
 
 const PLACEHOLDER_RE = /coming soon|coming in M\d/i

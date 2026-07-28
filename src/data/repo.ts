@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { DbBlock, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbMealEntry, DbSession, DbSetLog } from './db'
+import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbMealEntry, DbProgressPhoto, DbSession, DbSetLog } from './db'
 import type { RepSpec, LoadSpec } from '../domain/plan'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 
@@ -559,4 +559,70 @@ export async function loadCalendarData(): Promise<{
     db.cardioLogs.filter(c => c.deletedAt === null).toArray(),
   ])
   return { sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs }
+}
+
+// ─── Body Measurements ────────────────────────────────────────────────────────
+
+export async function addBodyMeasurement(
+  m: Omit<DbBodyMeasurement, 'updatedAt' | 'deletedAt'>,
+): Promise<void> {
+  await db.bodyMeasurements.add({ ...m, updatedAt: now(), deletedAt: null })
+}
+
+export async function getAllBodyMeasurements(): Promise<DbBodyMeasurement[]> {
+  return db.bodyMeasurements.orderBy('date').filter(m => m.deletedAt === null).toArray()
+}
+
+export async function updateBodyMeasurement(
+  id: string,
+  fields: Partial<Omit<DbBodyMeasurement, 'id' | 'updatedAt' | 'deletedAt'>>,
+): Promise<void> {
+  await db.bodyMeasurements.update(id, { ...fields, updatedAt: now() })
+}
+
+export async function deleteBodyMeasurement(id: string): Promise<void> {
+  await db.bodyMeasurements.update(id, { deletedAt: now(), updatedAt: now() })
+}
+
+export async function countBodyMetricsWithDefaultFat(): Promise<number> {
+  return db.bodyMetrics.filter(m => m.deletedAt === null && m.bodyFatPct === 15).count()
+}
+
+export async function clearDefaultBodyFat(): Promise<void> {
+  const ts = now()
+  await db.bodyMetrics
+    .filter(m => m.deletedAt === null && m.bodyFatPct === 15)
+    .modify({ bodyFatPct: null, updatedAt: ts })
+}
+
+// ─── Progress Photos ──────────────────────────────────────────────────────────
+
+export async function addProgressPhoto(
+  p: Omit<DbProgressPhoto, 'updatedAt' | 'deletedAt'>,
+): Promise<void> {
+  await db.progressPhotos.add({ ...p, updatedAt: now(), deletedAt: null })
+}
+
+export async function getAllProgressPhotos(): Promise<DbProgressPhoto[]> {
+  return db.progressPhotos.orderBy('date').filter(p => p.deletedAt === null).toArray()
+}
+
+export async function updateProgressPhoto(
+  id: string,
+  fields: Partial<Pick<DbProgressPhoto, 'notes' | 'pose' | 'date'>>,
+): Promise<void> {
+  await db.progressPhotos.update(id, { ...fields, updatedAt: now() })
+}
+
+export async function deleteProgressPhoto(id: string): Promise<void> {
+  await db.progressPhotos.update(id, { deletedAt: now(), updatedAt: now() })
+}
+
+export async function getPhotoStorageBytes(): Promise<number> {
+  const photos = await db.progressPhotos.filter(p => p.deletedAt === null).toArray()
+  let total = 0
+  for (const p of photos) {
+    total += p.blob.size
+  }
+  return total
 }

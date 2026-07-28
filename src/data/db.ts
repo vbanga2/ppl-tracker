@@ -163,6 +163,35 @@ export interface DbExerciseNote {
   deletedAt: number | null
 }
 
+export interface DbBodyMeasurement {
+  id: string
+  date: string
+  chestIn: number | null
+  leftArmIn: number | null
+  rightArmIn: number | null
+  waistIn: number | null
+  hipsIn: number | null
+  leftThighIn: number | null
+  rightThighIn: number | null
+  neckIn: number | null
+  calfIn: number | null
+  notes: string | null
+  updatedAt: number
+  deletedAt: number | null
+}
+
+export interface DbProgressPhoto {
+  id: string
+  date: string
+  pose: 'front' | 'side' | 'back' | 'other'
+  blob: Blob
+  widthPx: number
+  heightPx: number
+  notes: string | null
+  updatedAt: number
+  deletedAt: number | null
+}
+
 class PPLDatabase extends Dexie {
   meta!: EntityTable<DbMeta, 'key'>
   exercises!: EntityTable<DbExercise, 'id'>
@@ -177,6 +206,8 @@ class PPLDatabase extends Dexie {
   mealEntries!: EntityTable<DbMealEntry, 'id'>
   exerciseNotes!: EntityTable<DbExerciseNote, 'id'>
   backups!: EntityTable<DbBackupSnapshot, 'id'>
+  bodyMeasurements!: EntityTable<DbBodyMeasurement, 'id'>
+  progressPhotos!: EntityTable<DbProgressPhoto, 'id'>
 
   constructor() {
     super('ppl-tracker')
@@ -215,6 +246,14 @@ class PPLDatabase extends Dexie {
     // Version 6: adds backups table for automatic snapshots
     this.version(6).stores({
       backups: 'id, savedAt',
+    })
+    // Version 7: adds bodyMeasurements table
+    this.version(7).stores({
+      bodyMeasurements: 'id, date, deletedAt',
+    })
+    // Version 8: adds progressPhotos table (blobs stored natively in IndexedDB)
+    this.version(8).stores({
+      progressPhotos: 'id, date, pose, deletedAt',
     })
   }
 }

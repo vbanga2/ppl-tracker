@@ -2,10 +2,12 @@ import { useRef, useState, useEffect } from 'react'
 import {
   exportDatabase,
   downloadBackup,
+  downloadBackupWithPhotos,
   importDatabase,
   listBackups,
   restoreFromSnapshot,
 } from '../../data/backup'
+import { getPhotoStorageBytes } from '../../data/repo'
 import type { DbBackupSnapshot } from '../../data/db'
 import { PALETTE } from '../../ui/tokens'
 
@@ -14,11 +16,11 @@ export function SettingsPage() {
   const [status, setStatus] = useState<string | null>(null)
   const [backups, setBackups] = useState<DbBackupSnapshot[]>([])
   const [restoringId, setRestoringId] = useState<string | null>(null)
+  const [includePhotos, setIncludePhotos] = useState(false)
 
   const lastBackup = localStorage.getItem('lastBackupAt')
   const lastAutoBackup = localStorage.getItem('lastAutoBackupAt')
 
-  // Show export nudge if no manual export in 7 days or any session since last export
   const exportIsStale = (() => {
     if (!lastBackup) return true
     const age = Date.now() - parseInt(lastBackup)
@@ -32,9 +34,13 @@ export function SettingsPage() {
   async function handleExport() {
     try {
       const data = await exportDatabase()
-      downloadBackup(data)
+      if (includePhotos) {
+        await downloadBackupWithPhotos(data)
+      } else {
+        downloadBackup(data)
+      }
       localStorage.setItem('lastBackupAt', String(data.exportedAt))
-      setStatus('Backup downloaded.')
+      setStatus(includePhotos ? 'Backup with photos downloaded (.zip).' : 'Backup downloaded (.json).')
     } catch (err) {
       setStatus(`Export failed: ${err}`)
     }
@@ -110,9 +116,29 @@ export function SettingsPage() {
             Last export: {new Date(parseInt(lastBackup)).toLocaleString()}
           </p>
         )}
+
+        {/* Include photos toggle */}
+        <label
+          className="flex items-center gap-3 mb-3 cursor-pointer"
+          style={{ color: PALETTE.fg }}
+        >
+          <input
+            type="checkbox"
+            checked={includePhotos}
+            onChange={e => setIncludePhotos(e.target.checked)}
+            style={{ width: 18, height: 18, accentColor: PALETTE.push, cursor: 'pointer' }}
+          />
+          <span className="text-sm">Include progress photos (produces a .zip)</span>
+        </label>
+        {!includePhotos && (
+          <p className="text-xs mb-3" style={{ color: PALETTE.mute }}>
+            Photos are not included. A text-only backup does not preserve your progress photos.
+          </p>
+        )}
+
         <div className="flex flex-col gap-3">
           <ActionButton onClick={handleExport} primary>
-            Export backup (JSON)
+            Export backup {includePhotos ? '(.zip)' : '(JSON)'}
           </ActionButton>
           <ActionButton onClick={() => fileRef.current?.click()}>
             Import / merge backup
@@ -120,7 +146,7 @@ export function SettingsPage() {
           <input
             ref={fileRef}
             type="file"
-            accept=".json"
+            accept=".json,.zip"
             className="hidden"
             onChange={handleImport}
           />
@@ -237,17 +263,19 @@ function ActionButton({
 
 function StorageInfo() {
   const [info, setInfo] = useState<string | null>(null)
+  const [photoMb, setPhotoMb] = useState<number | null>(null)
 
   async function check() {
-    if (!navigator.storage?.estimate) {
-      setInfo('Storage estimate not available.')
-      return
-    }
-    const est = await navigator.storage.estimate()
-    const used = ((est.usage ?? 0) / 1024 / 1024).toFixed(1)
-    const quota = ((est.quota ?? 0) / 1024 / 1024).toFixed(0)
-    const persisted = await navigator.storage.persisted()
+    const [est, photoBytesResult] = await Promise.all([
+      navigator.storage?.estimate?.(),
+      getPhotoStorageBytes().catch(() => 0),
+    ])
+    const used = (((est?.usage ?? 0)) / 1024 / 1024).toFixed(1)
+    const quota = (((est?.quota ?? 0)) / 1024 / 1024).toFixed(0)
+    const persisted = await navigator.storage?.persisted?.()
     setInfo(`Used: ${used} MB / ${quota} MB — Durable: ${persisted ? 'yes' : 'no'}`)
+    const mb = photoBytesResult / 1024 / 1024
+    setPhotoMb(mb)
   }
 
   return (
@@ -262,6 +290,15 @@ function StorageInfo() {
       {info && (
         <p className="mt-2 text-xs" style={{ color: PALETTE.mute }}>
           {info}
+        </p>
+      )}
+      {photoMb !== null && (
+        <p
+          className="mt-1 text-xs"
+          style={{ color: photoMb > 200 ? '#f87171' : PALETTE.mute }}
+        >
+          Progress photos: {photoMb.toFixed(1)} MB
+          {photoMb > 200 && ' — approaching limit, consider exporting and deleting old photos'}
         </p>
       )}
     </div>

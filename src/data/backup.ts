@@ -1,3 +1,4 @@
+import { strFromU8, strToU8, zip, unzip } from 'fflate'
 import { db } from './db'
 import type { DbBackupSnapshot } from './db'
 
@@ -15,12 +16,14 @@ export interface BackupData {
   foods: unknown[]
   mealEntries: unknown[]
   exerciseNotes: unknown[]
+  bodyMeasurements: unknown[]
 }
 
 export async function exportDatabase(): Promise<BackupData> {
   const [
     exercises, blocks, sessions, setLogs, cardioLogs,
     bodyMetrics, healthSamples, routes, foods, mealEntries, exerciseNotes,
+    bodyMeasurements,
   ] = await Promise.all([
     db.exercises.toArray(),
     db.blocks.toArray(),
@@ -33,10 +36,11 @@ export async function exportDatabase(): Promise<BackupData> {
     db.foods.toArray(),
     db.mealEntries.toArray(),
     db.exerciseNotes.toArray(),
+    db.bodyMeasurements.toArray(),
   ])
 
   return {
-    version: 1,
+    version: 2,
     exportedAt: Date.now(),
     exercises,
     blocks,
@@ -49,6 +53,7 @@ export async function exportDatabase(): Promise<BackupData> {
     foods,
     mealEntries,
     exerciseNotes,
+    bodyMeasurements,
   }
 }
 
@@ -60,6 +65,60 @@ export function downloadBackup(data: BackupData): void {
   const date = new Date(data.exportedAt).toISOString().slice(0, 10)
   a.href = url
   a.download = `ppl-tracker-backup-${date}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Export with photos — produces a ZIP: data.json + photos/<id>.webp
+export async function downloadBackupWithPhotos(data: BackupData): Promise<void> {
+  const photos = await db.progressPhotos.filter(p => p.deletedAt === null).toArray()
+
+  const files: Record<string, Uint8Array> = {}
+  files['data.json'] = strToU8(JSON.stringify(data, null, 2))
+
+  const photoMeta: Array<{
+    id: string
+    date: string
+    pose: string
+    widthPx: number
+    heightPx: number
+    notes: string | null
+    updatedAt: number
+    deletedAt: number | null
+    file: string
+  }> = []
+
+  for (const p of photos) {
+    const ab = await p.blob.arrayBuffer()
+    const fname = `photos/${p.id}.webp`
+    files[fname] = new Uint8Array(ab)
+    photoMeta.push({
+      id: p.id,
+      date: p.date,
+      pose: p.pose,
+      widthPx: p.widthPx,
+      heightPx: p.heightPx,
+      notes: p.notes,
+      updatedAt: p.updatedAt,
+      deletedAt: p.deletedAt,
+      file: fname,
+    })
+  }
+
+  files['photos.json'] = strToU8(JSON.stringify(photoMeta, null, 2))
+
+  const zipped = await new Promise<Uint8Array>((resolve, reject) =>
+    zip(files, (err, data) => (err ? reject(err) : resolve(data))),
+  )
+
+  const blob = new Blob([zipped.buffer as ArrayBuffer], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  const date = new Date(data.exportedAt).toISOString().slice(0, 10)
+  a.href = url
+  a.download = `ppl-tracker-backup-${date}.zip`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -95,7 +154,8 @@ async function mergeBackupData(data: BackupData): Promise<void> {
   await db.transaction(
     'rw',
     [db.exercises, db.blocks, db.sessions, db.setLogs, db.cardioLogs,
-      db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries, db.exerciseNotes],
+      db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries,
+      db.exerciseNotes, db.bodyMeasurements],
     async () => {
       await mergeTable(db.exercises, data.exercises ?? [])
       await mergeTable(db.blocks, data.blocks ?? [])
@@ -108,14 +168,59 @@ async function mergeBackupData(data: BackupData): Promise<void> {
       await mergeTable(db.foods, data.foods ?? [])
       await mergeTable(db.mealEntries, data.mealEntries ?? [])
       await mergeTable(db.exerciseNotes, data.exerciseNotes ?? [])
+      await mergeTable(db.bodyMeasurements, data.bodyMeasurements ?? [])
     },
   )
 }
 
-export async function importDatabase(file: File): Promise<void> {
-  const text = await file.text()
-  const data: BackupData = JSON.parse(text)
+async function importZipWithPhotos(file: File): Promise<void> {
+  const ab = await file.arrayBuffer()
+  const entries = await new Promise<Record<string, Uint8Array>>((resolve, reject) =>
+    unzip(new Uint8Array(ab), (err, data) => (err ? reject(err) : resolve(data))),
+  )
+
+  if (!entries['data.json']) throw new Error('Invalid backup zip — missing data.json.')
+  const data: BackupData = JSON.parse(strFromU8(entries['data.json']))
   await mergeBackupData(data)
+
+  if (entries['photos.json']) {
+    type PhotoMeta = {
+      id: string; date: string; pose: 'front' | 'side' | 'back' | 'other'
+      widthPx: number; heightPx: number; notes: string | null
+      updatedAt: number; deletedAt: number | null; file: string
+    }
+    const photoMeta: PhotoMeta[] = JSON.parse(strFromU8(entries['photos.json']))
+
+    for (const meta of photoMeta) {
+      const photoData = entries[meta.file]
+      if (!photoData) continue
+      const blob = new Blob([photoData.buffer as ArrayBuffer], { type: 'image/webp' })
+      const existing = await db.progressPhotos.get(meta.id)
+      if (!existing || meta.updatedAt >= existing.updatedAt) {
+        await db.progressPhotos.put({
+          id: meta.id,
+          date: meta.date,
+          pose: meta.pose,
+          blob,
+          widthPx: meta.widthPx,
+          heightPx: meta.heightPx,
+          notes: meta.notes,
+          updatedAt: meta.updatedAt,
+          deletedAt: meta.deletedAt,
+        })
+      }
+    }
+  }
+}
+
+export async function importDatabase(file: File): Promise<void> {
+  if (file.name.endsWith('.zip')) {
+    await importZipWithPhotos(file)
+  } else {
+    const text = await file.text()
+    const data: BackupData = JSON.parse(text)
+    await mergeBackupData(data)
+  }
 }
 
 // ─── Auto-backup to IndexedDB (keeps last 10) ────────────────────────────────
