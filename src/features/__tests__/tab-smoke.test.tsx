@@ -23,6 +23,8 @@ vi.mock('../../data/repo', () => ({
   addProgressPhoto: vi.fn().mockResolvedValue(undefined),
   updateProgressPhoto: vi.fn().mockResolvedValue(undefined),
   deleteProgressPhoto: vi.fn().mockResolvedValue(undefined),
+  getProfile: vi.fn().mockResolvedValue(undefined),
+  saveProfile: vi.fn().mockResolvedValue(undefined),
 }))
 
 const PLACEHOLDER_RE = /coming soon|coming in M\d/i

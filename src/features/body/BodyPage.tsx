@@ -8,7 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
 } from 'recharts'
-import type { DbBodyMetric, DbBodyMeasurement, DbProgressPhoto } from '../../data/db'
+import type { DbBodyMetric, DbBodyMeasurement, DbProgressPhoto, DbProfile } from '../../data/db'
 import {
   addBodyMetric,
   getAllBodyMetrics,
@@ -24,6 +24,8 @@ import {
   getAllProgressPhotos,
   updateProgressPhoto,
   deleteProgressPhoto,
+  getProfile,
+  saveProfile,
 } from '../../data/repo'
 import { PALETTE } from '../../ui/tokens'
 
@@ -156,6 +158,15 @@ function WeightSection() {
   const [defaultFatCount, setDefaultFatCount] = useState<number | null>(null)
   const [clearingFat, setClearingFat] = useState(false)
 
+  // Height + BMI state
+  const [profile, setProfile] = useState<DbProfile | null>(null)
+  const [showBmi, setShowBmi] = useState(false)
+  const [heightUnit, setHeightUnit] = useState<'cm' | 'imperial'>('imperial')
+  const [heightFtStr, setHeightFtStr] = useState('')
+  const [heightInStr, setHeightInStr] = useState('')
+  const [heightCmStr, setHeightCmStr] = useState('')
+  const [savingHeight, setSavingHeight] = useState(false)
+
   function loadMetrics() {
     getAllBodyMetrics().then(setAllMetrics)
   }
@@ -163,6 +174,18 @@ function WeightSection() {
   useEffect(() => {
     loadMetrics()
     countBodyMetricsWithDefaultFat().then(setDefaultFatCount)
+    getProfile().then(p => {
+      if (p) {
+        setProfile(p)
+        setHeightUnit(p.heightUnit)
+        if (p.heightUnit === 'imperial') {
+          setHeightFtStr(p.heightFt !== null ? String(p.heightFt) : '')
+          setHeightInStr(p.heightIn !== null ? String(p.heightIn) : '')
+        } else {
+          setHeightCmStr(p.heightCm !== null ? String(p.heightCm) : '')
+        }
+      }
+    })
   }, [])
 
   function startEdit(m: DbBodyMetric) {
@@ -233,18 +256,46 @@ function WeightSection() {
     }
   }
 
+  async function handleSaveHeight() {
+    setSavingHeight(true)
+    try {
+      if (heightUnit === 'imperial') {
+        const ft = parseInt(heightFtStr) || null
+        const inches = parseFloat(heightInStr) || 0
+        const cm = ft !== null ? (ft * 12 + inches) * 2.54 : null
+        await saveProfile({ heightUnit: 'imperial', heightFt: ft, heightIn: inches || null, heightCm: cm })
+      } else {
+        const cm = parseFloat(heightCmStr) || null
+        await saveProfile({ heightUnit: 'cm', heightCm: cm, heightFt: null, heightIn: null })
+      }
+      setProfile(await getProfile() ?? null)
+    } finally {
+      setSavingHeight(false)
+    }
+  }
+
+  const profileHeightCm = useMemo((): number | null => {
+    if (!profile) return null
+    if (profile.heightUnit === 'cm') return profile.heightCm
+    if (profile.heightFt !== null) return ((profile.heightFt * 12) + (profile.heightIn ?? 0)) * 2.54
+    return null
+  }, [profile])
+
   const start = rangeStart(range)
   const chartData = useMemo(() => {
     const filtered = start ? allMetrics.filter(m => m.date >= start) : allMetrics
+    const hM = profileHeightCm ? profileHeightCm / 100 : null
     return filtered.map(m => ({
       date: m.date,
       weightLb: m.weightLb,
       bodyFatPct: m.bodyFatPct,
       ma7: Math.round(sevenDayAvg(allMetrics, m.date) * 10) / 10,
+      bmi: hM ? Math.round((m.weightLb * 0.453592 / (hM * hM)) * 10) / 10 : null,
     }))
-  }, [allMetrics, start])
+  }, [allMetrics, start, profileHeightCm])
 
   const hasFat = chartData.some(d => d.bodyFatPct !== null)
+  const hasBmi = showBmi && chartData.some(d => d.bmi !== null)
   const latest = chartData[chartData.length - 1]
   const first = chartData[0]
 
@@ -385,6 +436,51 @@ function WeightSection() {
         </div>
       </section>
 
+      {/* Height for BMI */}
+      <section style={{ marginBottom: 20 }}>
+        <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 10 }}>Height (for BMI)</p>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {(['imperial', 'cm'] as const).map(u => (
+            <button
+              key={u}
+              onClick={() => setHeightUnit(u)}
+              style={{ flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 12, fontWeight: heightUnit === u ? 500 : 400, background: heightUnit === u ? PALETTE.fg : PALETTE.panel, color: heightUnit === u ? PALETTE.ink : PALETTE.dim, border: `1px solid ${heightUnit === u ? PALETTE.fg : PALETTE.line}`, cursor: 'pointer' }}
+            >
+              {u === 'imperial' ? 'ft / in' : 'cm'}
+            </button>
+          ))}
+        </div>
+        {heightUnit === 'imperial' ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Feet</label>
+              <input type="number" inputMode="numeric" value={heightFtStr} onChange={e => setHeightFtStr(e.target.value)} placeholder="5" style={inputStyle} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={labelStyle}>Inches</label>
+              <input type="number" inputMode="decimal" value={heightInStr} onChange={e => setHeightInStr(e.target.value)} placeholder="10" style={inputStyle} />
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label style={labelStyle}>Centimetres</label>
+            <input type="number" inputMode="decimal" value={heightCmStr} onChange={e => setHeightCmStr(e.target.value)} placeholder="178" style={inputStyle} />
+          </div>
+        )}
+        <button
+          onClick={() => void handleSaveHeight()}
+          disabled={savingHeight}
+          style={{ marginTop: 10, width: '100%', minHeight: 44, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, color: PALETTE.dim, fontSize: 14, cursor: savingHeight ? 'default' : 'pointer', opacity: savingHeight ? 0.6 : 1 }}
+        >
+          {savingHeight ? 'Saving…' : 'Save height'}
+        </button>
+        {profileHeightCm && (
+          <p style={{ fontSize: 12, color: PALETTE.mute, marginTop: 8, textAlign: 'center' }}>
+            Saved: {Math.round(profileHeightCm)} cm · {Math.floor(profileHeightCm / 30.48)} ft {Math.round((profileHeightCm / 2.54) % 12)} in
+          </p>
+        )}
+      </section>
+
       {/* Time range */}
       {allMetrics.length > 0 && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
@@ -420,11 +516,13 @@ function WeightSection() {
       ) : (
         <section style={{ marginBottom: 24 }}>
           <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 8 }}>
-            {hasFat ? 'Bodyweight & body fat' : 'Bodyweight over time'}
+            {[hasFat && 'body fat', hasBmi && 'BMI'].filter(Boolean).length > 0
+              ? `Bodyweight · ${[hasFat && 'body fat', hasBmi && 'BMI'].filter(Boolean).join(' · ')}`
+              : 'Bodyweight over time'}
           </p>
 
           <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: hasFat ? 36 : 8, left: -20, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 8, right: hasFat && hasBmi ? 60 : (hasFat || hasBmi) ? 36 : 8, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.line} vertical={false} />
               <XAxis
                 dataKey="date"
@@ -452,6 +550,17 @@ function WeightSection() {
                   tickFormatter={(v: number) => `${v}%`}
                 />
               )}
+              {hasBmi && (
+                <YAxis
+                  yAxisId="bmi"
+                  orientation="right"
+                  domain={['auto', 'auto']}
+                  tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v: number) => v.toFixed(1)}
+                />
+              )}
               <Tooltip
                 {...tooltipStyle}
                 labelFormatter={(label: unknown) =>
@@ -460,6 +569,7 @@ function WeightSection() {
                 formatter={(value: unknown, name: unknown) => {
                   if (name === 'weightLb') return [`${value} lb`, 'Weight']
                   if (name === 'ma7') return [`${value} lb`, '7-day avg']
+                  if (name === 'bmi') return [String(value), 'BMI']
                   return [`${value}%`, 'Body fat']
                 }}
               />
@@ -501,10 +611,24 @@ function WeightSection() {
                   connectNulls
                 />
               )}
+              {hasBmi && (
+                <Line
+                  yAxisId="bmi"
+                  type="monotone"
+                  dataKey="bmi"
+                  stroke={PALETTE.cardioBorder}
+                  strokeWidth={2}
+                  strokeDasharray="3 3"
+                  dot={{ r: 3, fill: PALETTE.cardioBorder, strokeWidth: 0 }}
+                  activeDot={{ r: 4 }}
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              )}
             </ComposedChart>
           </ResponsiveContainer>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 11, color: PALETTE.mute }}>
+          <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 11, color: PALETTE.mute, flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <span style={{ width: 16, height: 2, background: PALETTE.fg, opacity: 0.6, display: 'inline-block' }} />
               Daily
@@ -513,6 +637,15 @@ function WeightSection() {
               <span style={{ width: 16, height: 2, background: PALETTE.push, display: 'inline-block' }} />
               7-day avg
             </span>
+            {profileHeightCm && (
+              <button
+                onClick={() => setShowBmi(v => !v)}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: showBmi ? PALETTE.cardioBorder : PALETTE.mute, fontSize: 11, padding: 0 }}
+              >
+                <span style={{ width: 16, height: 2, background: PALETTE.cardioBorder, opacity: showBmi ? 1 : 0.35, display: 'inline-block' }} />
+                BMI {showBmi ? '(on)' : '(off)'}
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -542,6 +675,18 @@ function WeightSection() {
               </div>
             )}
           </div>
+
+          {hasBmi && latest?.bmi != null && (
+            <div style={{ marginTop: 8, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '8px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <p style={{ fontSize: 10, color: PALETTE.mute }}>BMI</p>
+                <p style={{ fontSize: 18, fontVariantNumeric: 'tabular-nums', color: PALETTE.cardioBorder }}>{latest.bmi}</p>
+              </div>
+              <p style={{ fontSize: 11, color: PALETTE.mute, marginTop: 4, lineHeight: 1.5 }}>
+                BMI does not distinguish muscle from fat and systematically misclassifies muscular individuals. For someone strength training three days a week, body weight trend and body-fat percentage are more informative.
+              </p>
+            </div>
+          )}
         </section>
       )}
 

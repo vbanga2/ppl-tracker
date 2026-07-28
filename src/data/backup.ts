@@ -18,13 +18,14 @@ export interface BackupData {
   exerciseNotes: unknown[]
   bodyMeasurements: unknown[]
   nutritionTargets: unknown[]
+  profile: unknown[]
 }
 
 export async function exportDatabase(): Promise<BackupData> {
   const [
     exercises, blocks, sessions, setLogs, cardioLogs,
     bodyMetrics, healthSamples, routes, foods, mealEntries, exerciseNotes,
-    bodyMeasurements, nutritionTargets,
+    bodyMeasurements, nutritionTargets, profile,
   ] = await Promise.all([
     db.exercises.toArray(),
     db.blocks.toArray(),
@@ -39,10 +40,11 @@ export async function exportDatabase(): Promise<BackupData> {
     db.exerciseNotes.toArray(),
     db.bodyMeasurements.toArray(),
     db.nutritionTargets.toArray(),
+    db.profile.toArray(),
   ])
 
   return {
-    version: 3,
+    version: 4,
     exportedAt: Date.now(),
     exercises,
     blocks,
@@ -57,6 +59,7 @@ export async function exportDatabase(): Promise<BackupData> {
     exerciseNotes,
     bodyMeasurements,
     nutritionTargets,
+    profile,
   }
 }
 
@@ -158,7 +161,7 @@ async function mergeBackupData(data: BackupData): Promise<void> {
     'rw',
     [db.exercises, db.blocks, db.sessions, db.setLogs, db.cardioLogs,
       db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries,
-      db.exerciseNotes, db.bodyMeasurements, db.nutritionTargets],
+      db.exerciseNotes, db.bodyMeasurements, db.nutritionTargets, db.profile],
     async () => {
       await mergeTable(db.exercises, data.exercises ?? [])
       await mergeTable(db.blocks, data.blocks ?? [])
@@ -173,6 +176,14 @@ async function mergeBackupData(data: BackupData): Promise<void> {
       await mergeTable(db.exerciseNotes, data.exerciseNotes ?? [])
       await mergeTable(db.bodyMeasurements, data.bodyMeasurements ?? [])
       await mergeTable(db.nutritionTargets, data.nutritionTargets ?? [])
+      // Profile uses key='main' not id — single-row merge
+      if (data.profile?.length) {
+        const p = data.profile[0] as { key: 'main'; updatedAt: number }
+        const existing = await db.profile.get('main')
+        if (!existing || p.updatedAt >= existing.updatedAt) {
+          await (db.profile as unknown as { put: (item: unknown) => Promise<unknown> }).put(p)
+        }
+      }
     },
   )
 }
