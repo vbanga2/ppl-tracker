@@ -431,6 +431,35 @@ export async function getMealEntriesForDate(date: string): Promise<DbMealEntry[]
     .toArray()
 }
 
+export async function getMealEntriesForDates(dates: string[]): Promise<DbMealEntry[]> {
+  if (dates.length === 0) return []
+  return db.mealEntries
+    .where('date').anyOf(dates)
+    .filter(m => m.deletedAt === null)
+    .toArray()
+}
+
+export async function addMealEntry(
+  entry: Omit<DbMealEntry, 'id' | 'updatedAt' | 'deletedAt'>,
+): Promise<DbMealEntry> {
+  const ts = now()
+  const record: DbMealEntry = { ...entry, id: crypto.randomUUID(), updatedAt: ts, deletedAt: null }
+  await db.mealEntries.add(record)
+  return record
+}
+
+export async function updateMealEntry(
+  id: string,
+  fields: Partial<Omit<DbMealEntry, 'id' | 'updatedAt' | 'deletedAt'>>,
+): Promise<void> {
+  await db.mealEntries.update(id, { ...fields, updatedAt: now() })
+}
+
+export async function deleteMealEntry(id: string): Promise<void> {
+  const ts = now()
+  await db.mealEntries.update(id, { deletedAt: ts, updatedAt: ts })
+}
+
 // ─── All-Sets history (for charts) ───────────────────────────────────────────
 
 export async function getAllSetsForBlock(blockId: string): Promise<(DbSetLog & { date: string })[]> {

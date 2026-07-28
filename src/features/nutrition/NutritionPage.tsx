@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import type { DbFood } from '../../data/db'
 import { getAllFoods, addFood, updateFood, deleteFood } from '../../data/repo'
 import { PALETTE } from '../../ui/tokens'
+import { MealDiary } from './MealDiary'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -375,18 +376,19 @@ function DeleteConfirm({ food, onConfirm, onCancel }: DeleteConfirmProps) {
   )
 }
 
-// ─── NutritionPage ────────────────────────────────────────────────────────────
+// ─── FoodLibraryView ──────────────────────────────────────────────────────────
 
-export function NutritionPage() {
-  const [foods, setFoods] = useState<DbFood[]>([])
+interface FoodLibraryViewProps {
+  foods: DbFood[]
+  onFoodsChanged: () => void
+  onBack: () => void
+}
+
+function FoodLibraryView({ foods, onFoodsChanged, onBack }: FoodLibraryViewProps) {
   const [query, setQuery] = useState('')
   const [formMode, setFormMode] = useState<FormMode>({ kind: 'hidden' })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<DbFood | null>(null)
-
-  useEffect(() => {
-    getAllFoods().then(setFoods)
-  }, [])
 
   const visible = useMemo(() => {
     if (!query.trim()) return foods
@@ -401,10 +403,6 @@ export function NutritionPage() {
   function openEdit(food: DbFood) { setFormMode({ kind: 'edit', food }); setSelectedId(null) }
   function openDuplicate(food: DbFood) { setFormMode({ kind: 'duplicate', source: food }); setSelectedId(null) }
   function closeForm() { setFormMode({ kind: 'hidden' }) }
-
-  function toggleSelect(id: string) {
-    setSelectedId(prev => (prev === id ? null : id))
-  }
 
   async function handleSave(fields: FoodFields) {
     const payload = {
@@ -429,17 +427,16 @@ export function NutritionPage() {
 
     if (formMode.kind === 'edit') {
       await updateFood(formMode.food.id, payload)
-      setFoods(prev => prev.map(f => f.id === formMode.food.id ? { ...f, ...payload, updatedAt: Date.now() } : f))
     } else {
-      const record = await addFood(payload)
-      setFoods(prev => [record, ...prev])
+      await addFood(payload)
     }
+    await onFoodsChanged()
     closeForm()
   }
 
   async function handleDelete(food: DbFood) {
     await deleteFood(food.id)
-    setFoods(prev => prev.filter(f => f.id !== food.id))
+    await onFoodsChanged()
     setDeleteTarget(null)
     setSelectedId(null)
   }
@@ -457,8 +454,15 @@ export function NutritionPage() {
   return (
     <div style={{ padding: '0 0 16px' }}>
       {/* Header */}
-      <div style={{ padding: '16px 16px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <h1 style={{ flex: 1, fontSize: 22, fontWeight: 500, color: PALETTE.fg, margin: 0 }}>Nutrition</h1>
+      <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, borderBottom: `1px solid ${PALETTE.line}` }}>
+        <button
+          onClick={onBack}
+          style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: PALETTE.dim, cursor: 'pointer', fontSize: 20, flexShrink: 0 }}
+          aria-label="Back to diary"
+        >
+          ←
+        </button>
+        <h1 style={{ flex: 1, fontSize: 17, fontWeight: 500, color: PALETTE.fg, margin: 0 }}>Food library</h1>
         <button
           onClick={openAdd}
           style={{ minWidth: 44, minHeight: 44, background: PALETTE.push, border: 'none', borderRadius: 10, color: '#fff', fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
@@ -469,7 +473,7 @@ export function NutritionPage() {
       </div>
 
       {/* Search */}
-      <div style={{ padding: '0 16px 12px' }}>
+      <div style={{ padding: '12px 16px' }}>
         <input
           type="search"
           value={query}
@@ -479,12 +483,12 @@ export function NutritionPage() {
         />
       </div>
 
-      {/* Food library */}
+      {/* Food list */}
       <div style={{ padding: '0 16px' }}>
         {foods.length === 0 ? (
           <div style={{ textAlign: 'center', paddingTop: 60, color: PALETTE.mute }}>
             <p style={{ fontSize: 15, marginBottom: 8 }}>No foods yet</p>
-            <p style={{ fontSize: 13 }}>Add your first food using the + button.</p>
+            <p style={{ fontSize: 13 }}>Tap + to add your first food.</p>
           </div>
         ) : visible.length === 0 ? (
           <div style={{ textAlign: 'center', paddingTop: 40, color: PALETTE.mute }}>
@@ -496,7 +500,7 @@ export function NutritionPage() {
               key={food.id}
               food={food}
               selected={selectedId === food.id}
-              onSelect={() => toggleSelect(food.id)}
+              onSelect={() => setSelectedId(prev => prev === food.id ? null : food.id)}
               onEdit={() => openEdit(food)}
               onDuplicate={() => openDuplicate(food)}
               onDelete={() => { setDeleteTarget(food); setSelectedId(null) }}
@@ -523,4 +527,38 @@ export function NutritionPage() {
       )}
     </div>
   )
+}
+
+// ─── NutritionPage ────────────────────────────────────────────────────────────
+
+export function NutritionPage() {
+  const [view, setView] = useState<'diary' | 'library'>('diary')
+  const [foods, setFoods] = useState<DbFood[]>([])
+
+  useEffect(() => { getAllFoods().then(setFoods) }, [])
+
+  async function refreshFoods() {
+    setFoods(await getAllFoods())
+  }
+
+  function openLibrary() {
+    setView('library')
+  }
+
+  function closeLibrary() {
+    refreshFoods()
+    setView('diary')
+  }
+
+  if (view === 'library') {
+    return (
+      <FoodLibraryView
+        foods={foods}
+        onFoodsChanged={refreshFoods}
+        onBack={closeLibrary}
+      />
+    )
+  }
+
+  return <MealDiary foods={foods} onOpenLibrary={openLibrary} />
 }

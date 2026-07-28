@@ -151,7 +151,8 @@ export interface DbMealEntry {
   id: string
   date: string
   slot: 'breakfast' | 'lunch' | 'dinner' | 'snack'
-  foodId: string
+  foodId: string | null
+  label: string | null
   servings: number
   kcalCached: number
   proteinCached: number
@@ -302,6 +303,12 @@ class PPLDatabase extends Dexie {
         if (record['fiberCached'] === undefined) record['fiberCached'] = null
         if (record['sugarCached'] === undefined) record['sugarCached'] = null
         if (record['sodiumCached'] === undefined) record['sodiumCached'] = null
+      })
+    })
+    // Version 10: mealEntry gets label (for quick-add); foodId becomes nullable
+    this.version(10).stores({}).upgrade(async tx => {
+      await tx.table('mealEntries').toCollection().modify((record: Record<string, unknown>) => {
+        if (record['label'] === undefined) record['label'] = null
       })
     })
   }
