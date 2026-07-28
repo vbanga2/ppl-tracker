@@ -17,13 +17,14 @@ export interface BackupData {
   mealEntries: unknown[]
   exerciseNotes: unknown[]
   bodyMeasurements: unknown[]
+  nutritionTargets: unknown[]
 }
 
 export async function exportDatabase(): Promise<BackupData> {
   const [
     exercises, blocks, sessions, setLogs, cardioLogs,
     bodyMetrics, healthSamples, routes, foods, mealEntries, exerciseNotes,
-    bodyMeasurements,
+    bodyMeasurements, nutritionTargets,
   ] = await Promise.all([
     db.exercises.toArray(),
     db.blocks.toArray(),
@@ -37,10 +38,11 @@ export async function exportDatabase(): Promise<BackupData> {
     db.mealEntries.toArray(),
     db.exerciseNotes.toArray(),
     db.bodyMeasurements.toArray(),
+    db.nutritionTargets.toArray(),
   ])
 
   return {
-    version: 2,
+    version: 3,
     exportedAt: Date.now(),
     exercises,
     blocks,
@@ -54,6 +56,7 @@ export async function exportDatabase(): Promise<BackupData> {
     mealEntries,
     exerciseNotes,
     bodyMeasurements,
+    nutritionTargets,
   }
 }
 
@@ -155,7 +158,7 @@ async function mergeBackupData(data: BackupData): Promise<void> {
     'rw',
     [db.exercises, db.blocks, db.sessions, db.setLogs, db.cardioLogs,
       db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries,
-      db.exerciseNotes, db.bodyMeasurements],
+      db.exerciseNotes, db.bodyMeasurements, db.nutritionTargets],
     async () => {
       await mergeTable(db.exercises, data.exercises ?? [])
       await mergeTable(db.blocks, data.blocks ?? [])
@@ -169,6 +172,7 @@ async function mergeBackupData(data: BackupData): Promise<void> {
       await mergeTable(db.mealEntries, data.mealEntries ?? [])
       await mergeTable(db.exerciseNotes, data.exerciseNotes ?? [])
       await mergeTable(db.bodyMeasurements, data.bodyMeasurements ?? [])
+      await mergeTable(db.nutritionTargets, data.nutritionTargets ?? [])
     },
   )
 }

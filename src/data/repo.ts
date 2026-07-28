@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbMealEntry, DbProgressPhoto, DbSession, DbSetLog } from './db'
+import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbFood, DbMealEntry, DbProgressPhoto, DbSession, DbSetLog } from './db'
 import type { RepSpec, LoadSpec } from '../domain/plan'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 
@@ -381,6 +381,44 @@ export async function getLatestBodyWeight(): Promise<number | null> {
     .filter(m => m.deletedAt === null)
     .first()
   return m?.weightLb ?? null
+}
+
+// ─── Foods ────────────────────────────────────────────────────────────────────
+
+export async function getAllFoods(): Promise<DbFood[]> {
+  const foods = await db.foods.filter(f => f.deletedAt === null).toArray()
+  return foods.sort((a, b) => {
+    if (b.lastUsedAt !== a.lastUsedAt) return b.lastUsedAt - a.lastUsedAt
+    if (b.useCount !== a.useCount) return b.useCount - a.useCount
+    return a.name.localeCompare(b.name)
+  })
+}
+
+export async function addFood(
+  food: Omit<DbFood, 'id' | 'updatedAt' | 'deletedAt'>,
+): Promise<DbFood> {
+  const ts = now()
+  const record: DbFood = { ...food, id: crypto.randomUUID(), updatedAt: ts, deletedAt: null }
+  await db.foods.add(record)
+  return record
+}
+
+export async function updateFood(
+  id: string,
+  fields: Partial<Omit<DbFood, 'id' | 'updatedAt' | 'deletedAt'>>,
+): Promise<void> {
+  await db.foods.update(id, { ...fields, updatedAt: now() })
+}
+
+export async function deleteFood(id: string): Promise<void> {
+  const ts = now()
+  await db.foods.update(id, { deletedAt: ts, updatedAt: ts })
+}
+
+export async function recordFoodUsed(foodId: string): Promise<void> {
+  const food = await db.foods.get(foodId)
+  if (!food) return
+  await db.foods.update(foodId, { lastUsedAt: now(), useCount: food.useCount + 1, updatedAt: now() })
 }
 
 // ─── Meal Entries ─────────────────────────────────────────────────────────────

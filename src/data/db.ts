@@ -128,14 +128,21 @@ export interface DbFood {
   id: string
   barcode: string | null
   name: string
-  brand: string
-  servingG: number
+  brand: string | null
+  source: 'off' | 'manual'
+  servingDesc: string
+  servingGrams: number | null
   kcal: number
   proteinG: number
   carbG: number
   fatG: number
-  microsJson: string
-  source: 'off' | 'manual'
+  fiberG: number | null
+  sugarG: number | null
+  sodiumMg: number | null
+  satFatG: number | null
+  microsJson: string | null
+  lastUsedAt: number
+  useCount: number
   updatedAt: number
   deletedAt: number | null
 }
@@ -150,6 +157,20 @@ export interface DbMealEntry {
   proteinCached: number
   carbCached: number
   fatCached: number
+  fiberCached: number | null
+  sugarCached: number | null
+  sodiumCached: number | null
+  updatedAt: number
+  deletedAt: number | null
+}
+
+export interface DbNutritionTarget {
+  id: string
+  effectiveFrom: string
+  kcal: number
+  proteinG: number
+  carbG: number
+  fatG: number
   updatedAt: number
   deletedAt: number | null
 }
@@ -208,6 +229,7 @@ class PPLDatabase extends Dexie {
   backups!: EntityTable<DbBackupSnapshot, 'id'>
   bodyMeasurements!: EntityTable<DbBodyMeasurement, 'id'>
   progressPhotos!: EntityTable<DbProgressPhoto, 'id'>
+  nutritionTargets!: EntityTable<DbNutritionTarget, 'id'>
 
   constructor() {
     super('ppl-tracker')
@@ -254,6 +276,33 @@ class PPLDatabase extends Dexie {
     // Version 8: adds progressPhotos table (blobs stored natively in IndexedDB)
     this.version(8).stores({
       progressPhotos: 'id, date, pose, deletedAt',
+    })
+    // Version 9: nutrition targets table; extended food schema (servingDesc, servingGrams,
+    // fiberG, sugarG, sodiumMg, satFatG, lastUsedAt, useCount); extended mealEntry schema
+    this.version(9).stores({
+      foods: 'id, barcode, lastUsedAt, useCount, deletedAt',
+      nutritionTargets: 'id, effectiveFrom, deletedAt',
+    }).upgrade(async tx => {
+      await tx.table('foods').toCollection().modify((record: Record<string, unknown>) => {
+        const g = record['servingG'] as number | undefined
+        if (record['servingGrams'] === undefined) record['servingGrams'] = g ?? null
+        if (record['servingDesc'] === undefined) {
+          record['servingDesc'] = g ? `${g}g` : '1 serving'
+        }
+        if (record['fiberG'] === undefined) record['fiberG'] = null
+        if (record['sugarG'] === undefined) record['sugarG'] = null
+        if (record['sodiumMg'] === undefined) record['sodiumMg'] = null
+        if (record['satFatG'] === undefined) record['satFatG'] = null
+        if (record['microsJson'] === undefined || record['microsJson'] === '') record['microsJson'] = null
+        if (record['lastUsedAt'] === undefined) record['lastUsedAt'] = record['updatedAt'] ?? Date.now()
+        if (record['useCount'] === undefined) record['useCount'] = 0
+        if (record['brand'] === '' || record['brand'] === undefined) record['brand'] = null
+      })
+      await tx.table('mealEntries').toCollection().modify((record: Record<string, unknown>) => {
+        if (record['fiberCached'] === undefined) record['fiberCached'] = null
+        if (record['sugarCached'] === undefined) record['sugarCached'] = null
+        if (record['sodiumCached'] === undefined) record['sodiumCached'] = null
+      })
     })
   }
 }
