@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import type { DbFood, DbMealEntry } from '../../data/db'
+import type { DbFood, DbMealEntry, DbNutritionTarget } from '../../data/db'
 import {
   getMealEntriesForDate,
   getMealEntriesForDates,
@@ -7,9 +7,11 @@ import {
   updateMealEntry,
   deleteMealEntry,
   recordFoodUsed,
+  getActiveNutritionTarget,
 } from '../../data/repo'
 import { Stepper } from '../../ui/Stepper'
 import { PALETTE } from '../../ui/tokens'
+import slidersIcon from '../../assets/nav-icons/sliders.png'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,6 +35,7 @@ type Overlay =
 export interface MealDiaryProps {
   foods: DbFood[]
   onOpenLibrary: () => void
+  onOpenGoals: () => void
 }
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
@@ -711,12 +714,140 @@ function CopySlotSheet({ targetSlot, currentDate, onCopy, onClose }: {
   )
 }
 
+// ─── MacroBars ────────────────────────────────────────────────────────────────
+
+const MACRO_COLORS = {
+  kcal: PALETTE.push,
+  protein: PALETTE.pull,
+  carb: PALETTE.pr,
+  fat: PALETTE.cardioBorder,
+} as const
+
+interface MacroBarsProps {
+  entries: DbMealEntry[]
+  target: DbNutritionTarget
+}
+
+function MacroBars({ entries, target }: MacroBarsProps) {
+  const consumed = useMemo(() => sumMacros(entries), [entries])
+
+  const bars: { key: keyof typeof MACRO_COLORS; label: string; consumed: number; target: number; unit: string }[] = [
+    { key: 'kcal', label: 'Calories', consumed: r(consumed.kcal), target: target.kcal, unit: 'kcal' },
+    { key: 'protein', label: 'Protein', consumed: r(consumed.protein), target: target.proteinG, unit: 'g' },
+    { key: 'carb', label: 'Carbs', consumed: r(consumed.carb), target: target.carbG, unit: 'g' },
+    { key: 'fat', label: 'Fat', consumed: r(consumed.fat), target: target.fatG, unit: 'g' },
+  ]
+
+  return (
+    <div style={{ padding: '0 16px', marginBottom: 4 }}>
+      <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 12, padding: '14px 16px' }}>
+        <p style={{ fontSize: 11, color: PALETTE.mute, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Daily targets</p>
+        {bars.map(({ key, label, consumed: cons, target: tgt, unit }) => {
+          const pct = tgt > 0 ? Math.min(cons / tgt, 1) : 0
+          const remaining = tgt - cons
+          const over = cons > tgt
+          return (
+            <div key={key} style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 12, color: PALETTE.dim }}>{label}</span>
+                <span style={{ fontSize: 11, color: PALETTE.mute, fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums' }}>
+                  {cons} / {tgt} {unit}{' '}
+                  <span style={{ color: over ? '#f5c518' : PALETTE.mute }}>
+                    ({over ? '+' : ''}{remaining} {over ? 'over' : 'left'})
+                  </span>
+                </span>
+              </div>
+              <div style={{ height: 6, background: PALETTE.line, borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${pct * 100}%`, background: MACRO_COLORS[key], borderRadius: 3, transition: 'width 200ms' }} />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── MicroPanel ───────────────────────────────────────────────────────────────
+
+interface MicroPanelProps {
+  entries: DbMealEntry[]
+  foodMap: Map<string, DbFood>
+}
+
+function MicroPanel({ entries, foodMap }: MicroPanelProps) {
+  const [open, setOpen] = useState(false)
+
+  const micros = useMemo(() => {
+    let fiberG = 0, sugarG = 0, sodiumMg = 0
+    let hasFiber = false, hasSugar = false, hasSodium = false
+    for (const e of entries) {
+      if (e.fiberCached !== null) { fiberG += e.fiberCached; hasFiber = true }
+      if (e.sugarCached !== null) { sugarG += e.sugarCached; hasSugar = true }
+      if (e.sodiumCached !== null) { sodiumMg += e.sodiumCached; hasSodium = true }
+    }
+    // Check if any food in today's entries has microsJson
+    const hasMicrosJson = entries.some(e => e.foodId && foodMap.get(e.foodId)?.microsJson)
+    return {
+      fiberG: hasFiber ? Math.round(fiberG * 10) / 10 : null,
+      sugarG: hasSugar ? Math.round(sugarG * 10) / 10 : null,
+      sodiumMg: hasSodium ? Math.round(sodiumMg) : null,
+      hasMicrosJson,
+    }
+  }, [entries, foodMap])
+
+  const rows: { label: string; value: string | null }[] = [
+    { label: 'Fiber', value: micros.fiberG !== null ? `${micros.fiberG} g` : null },
+    { label: 'Sugar (total)', value: micros.sugarG !== null ? `${micros.sugarG} g` : null },
+    { label: 'Sodium', value: micros.sodiumMg !== null ? `${(micros.sodiumMg / 1000).toFixed(2)} g` : null },
+    { label: 'Vitamin D', value: null },
+    { label: 'Iron', value: null },
+    { label: 'Zinc', value: null },
+    { label: 'Vitamin C', value: null },
+  ]
+
+  const hasAnyData = rows.some(r => r.value !== null)
+
+  return (
+    <div style={{ padding: '0 16px', marginBottom: 4 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: open ? '10px 10px 0 0' : 10, padding: '10px 14px', cursor: 'pointer', color: PALETTE.mute, fontSize: 13 }}
+      >
+        <span>Micronutrients</span>
+        <span style={{ fontSize: 11, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }}>▼</span>
+      </button>
+      {open && (
+        <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '8px 0' }}>
+          {!hasAnyData && (
+            <p style={{ fontSize: 12, color: PALETTE.mute, textAlign: 'center', padding: '12px 16px', lineHeight: 1.5 }}>
+              Insufficient data — logged foods don't carry micronutrient information. This reflects a gap in the food database, not a deficiency.
+            </p>
+          )}
+          {rows.map(({ label, value }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', borderBottom: `1px solid ${PALETTE.line}` }}>
+              <span style={{ fontSize: 13, color: PALETTE.dim }}>{label}</span>
+              <span style={{ fontSize: 13, color: value ? PALETTE.fg : PALETTE.mute, fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums' }}>
+                {value ?? 'insufficient data'}
+              </span>
+            </div>
+          ))}
+          <p style={{ fontSize: 11, color: PALETTE.mute, padding: '8px 14px 4px', lineHeight: 1.5 }}>
+            Only nutrients present in logged foods are shown. Open Food Facts micronutrient coverage is sparse.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── MealDiary ────────────────────────────────────────────────────────────────
 
-export function MealDiary({ foods, onOpenLibrary }: MealDiaryProps) {
+export function MealDiary({ foods, onOpenLibrary, onOpenGoals }: MealDiaryProps) {
   const today = useMemo(todayStr, [])
   const [date, setDate] = useState(today)
   const [entries, setEntries] = useState<DbMealEntry[]>([])
+  const [nutritionTarget, setNutritionTarget] = useState<DbNutritionTarget | null>(null)
   const [overlay, setOverlay] = useState<Overlay>({ kind: 'none' })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [undoEntry, setUndoEntry] = useState<DbMealEntry | null>(null)
@@ -726,6 +857,7 @@ export function MealDiary({ foods, onOpenLibrary }: MealDiaryProps) {
 
   useEffect(() => {
     getMealEntriesForDate(date).then(setEntries)
+    getActiveNutritionTarget(date).then(t => setNutritionTarget(t ?? null))
     setExpandedId(null)
   }, [date])
 
@@ -914,6 +1046,13 @@ export function MealDiary({ foods, onOpenLibrary }: MealDiaryProps) {
         <button onClick={onOpenLibrary} style={{ minHeight: 36, padding: '0 14px', background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, color: PALETTE.dim, fontSize: 13, cursor: 'pointer' }}>
           Library
         </button>
+        <button
+          onClick={onOpenGoals}
+          style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}
+          aria-label="Nutrition goals"
+        >
+          <img src={slidersIcon} alt="" style={{ width: 32, height: 32, opacity: 0.7, filter: 'invert(1)' }} />
+        </button>
       </div>
 
       {/* Date navigation */}
@@ -948,6 +1087,19 @@ export function MealDiary({ foods, onOpenLibrary }: MealDiaryProps) {
 
       {/* Day totals */}
       {entries.length > 0 && <DayTotals entries={entries} />}
+
+      {/* Macro bars */}
+      {nutritionTarget && <MacroBars entries={entries} target={nutritionTarget} />}
+      {!nutritionTarget && (
+        <div style={{ padding: '0 16px', marginBottom: 4 }}>
+          <button onClick={onOpenGoals} style={{ width: '100%', minHeight: 44, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, color: PALETTE.mute, fontSize: 13, cursor: 'pointer' }}>
+            Set nutrition goals to see macro targets →
+          </button>
+        </div>
+      )}
+
+      {/* Micronutrient panel */}
+      {entries.length > 0 && <MicroPanel entries={entries} foodMap={foodMap} />}
 
       {/* Meal slots */}
       <div style={{ marginTop: 16 }}>

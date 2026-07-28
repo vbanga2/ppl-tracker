@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import type { DbFood } from '../../data/db'
-import { getAllFoods, addFood, updateFood, deleteFood } from '../../data/repo'
+import { getAllFoods, addFood, updateFood, deleteFood, getMealEntriesForDateRange, getActiveNutritionTarget } from '../../data/repo'
 import { PALETTE } from '../../ui/tokens'
 import { MealDiary } from './MealDiary'
+import { NutritionGoalsScreen } from './NutritionGoalsScreen'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -529,10 +530,174 @@ function FoodLibraryView({ foods, onFoodsChanged, onBack }: FoodLibraryViewProps
   )
 }
 
+// ─── AdherenceStats ───────────────────────────────────────────────────────────
+
+type StatsRange = 'month' | 'year' | 'all'
+
+function AdherenceStats() {
+  const [statsRange, setStatsRange] = useState<StatsRange>('month')
+  const [stats, setStats] = useState<{
+    daysLogged: number
+    daysInRange: number
+    daysOnTarget: number
+    daysOnTargetLogged: number
+    daysMetProtein: number
+    avgKcal: number
+    avgProtein: number
+    avgCarb: number
+    avgFat: number
+  } | null>(null)
+
+  useEffect(() => {
+    async function compute() {
+      const today = new Date().toISOString().slice(0, 10)
+      let startDate: string
+      if (statsRange === 'month') {
+        const d = new Date()
+        startDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+      } else if (statsRange === 'year') {
+        startDate = `${new Date().getFullYear()}-01-01`
+      } else {
+        startDate = '2000-01-01'
+      }
+
+      const [entries, target] = await Promise.all([
+        getMealEntriesForDateRange(startDate, today),
+        getActiveNutritionTarget(today),
+      ])
+
+      // Count days in range
+      const start = new Date(startDate + 'T00:00:00')
+      const end = new Date(today + 'T00:00:00')
+      const daysInRange = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1)
+
+      // Group entries by date
+      const byDate = new Map<string, typeof entries>()
+      for (const e of entries) {
+        if (!byDate.has(e.date)) byDate.set(e.date, [])
+        byDate.get(e.date)!.push(e)
+      }
+
+      const daysLogged = byDate.size
+      let daysOnTarget = 0
+      let daysOnTargetLogged = 0
+      let daysMetProtein = 0
+      let totalKcal = 0, totalProtein = 0, totalCarb = 0, totalFat = 0
+
+      for (const [, dayEntries] of byDate) {
+        const kcal = dayEntries.reduce((s, e) => s + e.kcalCached, 0)
+        const protein = dayEntries.reduce((s, e) => s + e.proteinCached, 0)
+        const carb = dayEntries.reduce((s, e) => s + e.carbCached, 0)
+        const fat = dayEntries.reduce((s, e) => s + e.fatCached, 0)
+        totalKcal += kcal
+        totalProtein += protein
+        totalCarb += carb
+        totalFat += fat
+        if (target) {
+          daysOnTargetLogged++
+          if (Math.abs(kcal - target.kcal) / target.kcal <= 0.1) daysOnTarget++
+          if (protein >= target.proteinG * 0.9) daysMetProtein++
+        }
+      }
+
+      setStats({
+        daysLogged,
+        daysInRange,
+        daysOnTarget,
+        daysOnTargetLogged,
+        daysMetProtein,
+        avgKcal: daysLogged > 0 ? Math.round(totalKcal / daysLogged) : 0,
+        avgProtein: daysLogged > 0 ? Math.round(totalProtein / daysLogged) : 0,
+        avgCarb: daysLogged > 0 ? Math.round(totalCarb / daysLogged) : 0,
+        avgFat: daysLogged > 0 ? Math.round(totalFat / daysLogged) : 0,
+      })
+    }
+    void compute()
+  }, [statsRange])
+
+  const rangeLabel = statsRange === 'month' ? 'this month' : statsRange === 'year' ? 'this year' : 'all time'
+
+  return (
+    <div style={{ padding: '16px 16px 0' }}>
+      <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Adherence</p>
+
+      {/* Range selector */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+        {(['month', 'year', 'all'] as StatsRange[]).map(r => (
+          <button
+            key={r}
+            onClick={() => setStatsRange(r)}
+            style={{ flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 12, fontWeight: statsRange === r ? 500 : 400, background: statsRange === r ? PALETTE.fg : PALETTE.panel, color: statsRange === r ? PALETTE.ink : PALETTE.dim, border: `1px solid ${statsRange === r ? PALETTE.fg : PALETTE.line}`, cursor: 'pointer' }}
+          >
+            {r === 'month' ? 'This month' : r === 'year' ? 'This year' : 'All time'}
+          </button>
+        ))}
+      </div>
+
+      {!stats ? (
+        <p style={{ fontSize: 13, color: PALETTE.mute, textAlign: 'center', padding: '16px 0' }}>Computing…</p>
+      ) : stats.daysLogged === 0 ? (
+        <p style={{ fontSize: 13, color: PALETTE.mute, textAlign: 'center', padding: '16px 0' }}>No meals logged {rangeLabel}.</p>
+      ) : (
+        <>
+          {/* Average intake — leads because averages are more meaningful than single days */}
+          <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <p style={{ fontSize: 11, color: PALETTE.mute, marginBottom: 10 }}>Average daily intake on logged days ({rangeLabel})</p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Calories', value: `${stats.avgKcal.toLocaleString()} kcal` },
+                { label: 'Protein', value: `${stats.avgProtein} g` },
+                { label: 'Carbs', value: `${stats.avgCarb} g` },
+                { label: 'Fat', value: `${stats.avgFat} g` },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ flex: '1 1 80px', background: PALETTE.ink, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '8px 10px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>{label}</p>
+                  <p style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Logging stats */}
+          <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 2 }}>
+              <span style={{ fontSize: 13, color: PALETTE.dim }}>Days logged</span>
+              <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>
+                {stats.daysLogged} / {stats.daysInRange}{' '}
+                <span style={{ fontSize: 12, color: PALETTE.mute }}>({Math.round(stats.daysLogged / stats.daysInRange * 100)}%)</span>
+              </span>
+            </div>
+            <p style={{ fontSize: 11, color: PALETTE.mute, lineHeight: 1.4 }}>
+              Days without entries are unlogged, not failures — averages above only include days you did log.
+            </p>
+          </div>
+
+          {/* Target adherence */}
+          {stats.daysOnTargetLogged > 0 && (
+            <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+              <p style={{ fontSize: 12, color: PALETTE.mute, marginBottom: 8 }}>Of {stats.daysOnTargetLogged} logged days with an active goal</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, color: PALETTE.dim }}>Within calorie target (±10%)</span>
+                  <span style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{stats.daysOnTarget}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: 13, color: PALETTE.dim }}>Met protein minimum (≥90%)</span>
+                  <span style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{stats.daysMetProtein}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── NutritionPage ────────────────────────────────────────────────────────────
 
 export function NutritionPage() {
-  const [view, setView] = useState<'diary' | 'library'>('diary')
+  const [view, setView] = useState<'diary' | 'library' | 'goals'>('diary')
   const [foods, setFoods] = useState<DbFood[]>([])
 
   useEffect(() => { getAllFoods().then(setFoods) }, [])
@@ -541,13 +706,13 @@ export function NutritionPage() {
     setFoods(await getAllFoods())
   }
 
-  function openLibrary() {
-    setView('library')
-  }
+  function openLibrary() { setView('library') }
+  function closeLibrary() { refreshFoods(); setView('diary') }
+  function openGoals() { setView('goals') }
+  function closeGoals() { setView('diary') }
 
-  function closeLibrary() {
-    refreshFoods()
-    setView('diary')
+  if (view === 'goals') {
+    return <NutritionGoalsScreen onClose={closeGoals} onSaved={closeGoals} />
   }
 
   if (view === 'library') {
@@ -560,5 +725,11 @@ export function NutritionPage() {
     )
   }
 
-  return <MealDiary foods={foods} onOpenLibrary={openLibrary} />
+  return (
+    <>
+      <MealDiary foods={foods} onOpenLibrary={openLibrary} onOpenGoals={openGoals} />
+      <AdherenceStats />
+      <div style={{ height: 32 }} />
+    </>
+  )
 }
