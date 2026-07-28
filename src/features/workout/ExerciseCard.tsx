@@ -1,11 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import type { DbExercise, DbBlock, DbSession, DbSetLog } from '../../data/db'
-import type { PlateInventory } from '../../domain/plates'
 import {
   getAllBlocks,
   getSetsForSession,
   getPreviousSetsForBlock,
-  getPlateInventory,
   getExerciseNote,
   saveExerciseNote,
 } from '../../data/repo'
@@ -18,7 +16,6 @@ export interface SessionData {
   allBlocks: DbBlock[]
   todayByBlock: Map<string, DbSetLog[]>
   prevSetsByBlock: Map<string, DbSetLog[]>
-  inventory: PlateInventory[]
 }
 
 interface ExerciseCardProps {
@@ -93,10 +90,9 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
    * Called once on expand and after every set log/delete.
    */
   const loadSessionData = useCallback(async () => {
-    const [allBlocks, allSessionSets, inventory] = await Promise.all([
+    const [allBlocks, allSessionSets] = await Promise.all([
       getAllBlocks(),
       getSetsForSession(session.id),
-      getPlateInventory(),
     ])
 
     const todayByBlock = new Map<string, DbSetLog[]>()
@@ -131,7 +127,7 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
     }
     setBlockSetCounts(newCounts)
 
-    setSessionData({ allBlocks, todayByBlock, prevSetsByBlock, inventory })
+    setSessionData({ allBlocks, todayByBlock, prevSetsByBlock })
   }, [blocks, session.id])
 
   useEffect(() => {
@@ -251,7 +247,6 @@ export function ExerciseCard({ exercise, blocks, session, index }: ExerciseCardP
                   allBlocks={sessionData.allBlocks}
                   todayByBlock={sessionData.todayByBlock}
                   prevSetsByBlock={sessionData.prevSetsByBlock}
-                  inventory={sessionData.inventory}
                   onSetChanged={handleSetChanged}
                 />
               ))

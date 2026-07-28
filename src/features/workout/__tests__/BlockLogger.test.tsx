@@ -78,7 +78,6 @@ function makeProps(overrides: Partial<BlockLoggerProps> = {}): BlockLoggerProps 
     allBlocks: [mockBlock],
     todayByBlock,
     prevSetsByBlock,
-    inventory: [],
     onSetChanged: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   }

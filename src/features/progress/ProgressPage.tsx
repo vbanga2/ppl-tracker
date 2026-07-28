@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -44,10 +44,9 @@ function bodyweightAtDate(metrics: DbBodyMetric[], date: string): number {
   return bw
 }
 
-// ISO-week Monday for a date string (used to aggregate volume per week)
 function mondayOf(dateStr: string): string {
   const d = new Date(dateStr + 'T00:00:00')
-  const dow = d.getDay() // 0=Sun
+  const dow = d.getDay()
   const offset = dow === 0 ? -6 : 1 - dow
   d.setDate(d.getDate() + offset)
   return d.toISOString().slice(0, 10)
@@ -100,7 +99,6 @@ function computeDailyStreak(dates: string[], tolerance = 2): { current: number; 
     }
   }
 
-  // Current streak — walk backward from last date
   const today = todayStr()
   const last = unique[unique.length - 1]
   const daysSinceLast = Math.round(
@@ -177,45 +175,53 @@ function computeWeeklyStreak(dates: string[], minSessions = 3): { current: numbe
   return { current, longest }
 }
 
-// ─── Compact Heatmap ─────────────────────────────────────────────────────────
+// ─── Heatmap (Anki-style) ────────────────────────────────────────────────────
+
+type HeatView = 'quarter' | 'year'
 
 interface HeatmapProps {
   sessions: DbSession[]
   cardioLogs: DbCardioLog[]
-  year: number
-  onYearChange: (y: number) => void
+  onOpenDate?: (date: string) => void
 }
 
 const CARDIO_PURPLE = '#8b5cf6'
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const DOW_LABELS = ['M', '', 'W', '', 'F', '', '']
+const QUARTER_WEEKS = 13
+const CELL_Q = 13
+const CELL_Y = 5
+const GAP = 2
 
-function buildYearGrid(year: number): { date: string; inYear: boolean }[][] {
-  // columns = weeks; rows = Mon(0)…Sun(6)
-  const jan1 = new Date(year, 0, 1)
-  const jan1Dow = jan1.getDay() // 0=Sun
-  // Monday on or before Jan 1
-  const firstMonday = new Date(jan1)
-  firstMonday.setDate(1 - (jan1Dow === 0 ? 6 : jan1Dow - 1))
+type GridCell = { date: string; inRange: boolean }
 
-  const dec31 = new Date(year, 11, 31)
-  const dec31Dow = dec31.getDay()
-  // Sunday on or after Dec 31
-  const lastSunday = new Date(dec31)
-  lastSunday.setDate(31 + (dec31Dow === 0 ? 0 : 7 - dec31Dow))
+function getQuarter(date: string): 1 | 2 | 3 | 4 {
+  const m = parseInt(date.slice(5, 7))
+  return Math.ceil(m / 3) as 1 | 2 | 3 | 4
+}
 
-  const totalDays =
-    Math.round((lastSunday.getTime() - firstMonday.getTime()) / 86400000) + 1
-  const numWeeks = totalDays / 7
+function quarterFirstMonday(year: number, quarter: 1 | 2 | 3 | 4): Date {
+  const month = (quarter - 1) * 3
+  const d = new Date(year, month, 1)
+  const dow = d.getDay()
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1))
+  return d
+}
 
-  const cols: { date: string; inYear: boolean }[][] = []
-  const cursor = new Date(firstMonday)
+function buildQuarterGrid(year: number, quarter: 1 | 2 | 3 | 4): GridCell[][] {
+  const qStartMonth = (quarter - 1) * 3
+  const qEndMonth = qStartMonth + 2
+  const startDate = `${year}-${String(qStartMonth + 1).padStart(2, '0')}-01`
+  const endDate = new Date(year, qEndMonth + 1, 0).toISOString().slice(0, 10)
 
-  for (let w = 0; w < numWeeks; w++) {
-    const col: { date: string; inYear: boolean }[] = []
+  const cursor = new Date(quarterFirstMonday(year, quarter))
+  const cols: GridCell[][] = []
+
+  for (let w = 0; w < QUARTER_WEEKS; w++) {
+    const col: GridCell[] = []
     for (let d = 0; d < 7; d++) {
       const iso = cursor.toISOString().slice(0, 10)
-      col.push({ date: iso, inYear: cursor.getFullYear() === year })
+      col.push({ date: iso, inRange: iso >= startDate && iso <= endDate })
       cursor.setDate(cursor.getDate() + 1)
     }
     cols.push(col)
@@ -223,62 +229,71 @@ function buildYearGrid(year: number): { date: string; inYear: boolean }[][] {
   return cols
 }
 
-// Column index where each month's label should appear (first date in that month)
-function monthLabelCols(cols: { date: string; inYear: boolean }[][]): Map<number, string> {
+function buildYearGrid(year: number): GridCell[][] {
+  const jan1 = new Date(year, 0, 1)
+  const jan1Dow = jan1.getDay()
+  const firstMonday = new Date(jan1)
+  firstMonday.setDate(1 - (jan1Dow === 0 ? 6 : jan1Dow - 1))
+
+  const dec31 = new Date(year, 11, 31)
+  const dec31Dow = dec31.getDay()
+  const lastSunday = new Date(dec31)
+  lastSunday.setDate(31 + (dec31Dow === 0 ? 0 : 7 - dec31Dow))
+
+  const totalDays = Math.round((lastSunday.getTime() - firstMonday.getTime()) / 86400000) + 1
+  const numWeeks = totalDays / 7
+
+  const cols: GridCell[][] = []
+  const cursor = new Date(firstMonday)
+
+  for (let w = 0; w < numWeeks; w++) {
+    const col: GridCell[] = []
+    for (let d = 0; d < 7; d++) {
+      const iso = cursor.toISOString().slice(0, 10)
+      col.push({ date: iso, inRange: cursor.getFullYear() === year })
+      cursor.setDate(cursor.getDate() + 1)
+    }
+    cols.push(col)
+  }
+  return cols
+}
+
+function monthLabelsForCols(cols: GridCell[][]): Map<number, string> {
   const map = new Map<number, string>()
   let lastMonth = -1
   for (let ci = 0; ci < cols.length; ci++) {
-    for (const cell of cols[ci]) {
-      if (!cell.inYear) continue
-      const m = parseInt(cell.date.slice(5, 7)) - 1
-      if (m !== lastMonth) {
-        map.set(ci, MONTH_ABBR[m])
-        lastMonth = m
-      }
-      break
+    const first = cols[ci].find(c => c.inRange)
+    if (!first) continue
+    const m = parseInt(first.date.slice(5, 7)) - 1
+    if (m !== lastMonth) {
+      map.set(ci, MONTH_ABBR[m])
+      lastMonth = m
     }
   }
   return map
 }
 
-function Heatmap({ sessions, cardioLogs, year, onYearChange }: HeatmapProps) {
-  const [tooltipDate, setTooltipDate] = useState<string | null>(null)
+function advanceQuarter(year: number, q: 1 | 2 | 3 | 4, delta: 1 | -1): { year: number; q: 1 | 2 | 3 | 4 } {
+  let newQ = (q + delta) as number
+  let newYear = year
+  if (newQ > 4) { newQ = 1; newYear++ }
+  if (newQ < 1) { newQ = 4; newYear-- }
+  return { year: newYear, q: newQ as 1 | 2 | 3 | 4 }
+}
+
+function Heatmap({ sessions, cardioLogs, onOpenDate }: HeatmapProps) {
   const today = todayStr()
-  const currentYear = new Date().getFullYear()
+  const todayYear = parseInt(today.slice(0, 4))
+  const todayQ = getQuarter(today)
 
-  const sessionMap = useMemo(() => {
-    const m = new Map<string, 'push' | 'pull' | 'legs'>()
-    for (const s of sessions) m.set(s.date, s.day)
-    return m
-  }, [sessions])
+  const [view, setView] = useState<HeatView>('quarter')
+  const [qYear, setQYear] = useState(todayYear)
+  const [qQ, setQQ] = useState<1 | 2 | 3 | 4>(todayQ)
+  const [yearKey, setYearKey] = useState(todayYear)
+  const [tooltipDate, setTooltipDate] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  // For cardio-only days (no lifting session): we need cardio without a matching session
-  const cardioSessionIds = useMemo(() => {
-    const m = new Map<string, string>() // sessionId → date
-    for (const s of sessions) m.set(s.id, s.date)
-    return m
-  }, [sessions])
-
-  const cardioDates = useMemo(() => {
-    const s = new Set<string>()
-    for (const c of cardioLogs) {
-      const date = cardioSessionIds.get(c.sessionId)
-      if (date) s.add(date)
-    }
-    return s
-  }, [cardioLogs, cardioSessionIds])
-
-  const cols = useMemo(() => buildYearGrid(year), [year])
-  const monthLabels = useMemo(() => monthLabelCols(cols), [cols])
-
-  const numWeeks = cols.length
-  const cellSize = 5
-  const gap = 1
-  const labelW = 14
-  const gridW = numWeeks * cellSize + (numWeeks - 1) * gap
-
-  // Session info for tooltip
-  const sessionByDate = useMemo(() => {
+  const sessionsByDate = useMemo(() => {
     const m = new Map<string, DbSession[]>()
     for (const s of sessions) {
       const arr = m.get(s.date) ?? []
@@ -288,123 +303,203 @@ function Heatmap({ sessions, cardioLogs, year, onYearChange }: HeatmapProps) {
     return m
   }, [sessions])
 
-  // Stats for selected year
-  const yearSessions = useMemo(
-    () => sessions.filter(s => s.date.startsWith(String(year))),
-    [sessions, year],
-  )
-  const yearDates = yearSessions.map(s => s.date)
-  const daysElapsed = year < currentYear
-    ? 365 + (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 1 : 0)
-    : Math.min(
-        parseInt(today.slice(5, 7)) * 30 + parseInt(today.slice(8, 10)),
-        365,
-      )
+  const sessionIdToDate = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of sessions) m.set(s.id, s.date)
+    return m
+  }, [sessions])
 
+  const cardioDates = useMemo(() => {
+    const s = new Set<string>()
+    for (const c of cardioLogs) {
+      const date = sessionIdToDate.get(c.sessionId)
+      if (date) s.add(date)
+    }
+    return s
+  }, [cardioLogs, sessionIdToDate])
+
+  const cols = useMemo(() => {
+    return view === 'quarter' ? buildQuarterGrid(qYear, qQ) : buildYearGrid(yearKey)
+  }, [view, qYear, qQ, yearKey])
+
+  const monthLabels = useMemo(() => monthLabelsForCols(cols), [cols])
+  const cellSize = view === 'quarter' ? CELL_Q : CELL_Y
+  const labelW = view === 'quarter' ? 18 : 14
+
+  useEffect(() => {
+    if (view !== 'year' || !scrollRef.current) return
+    const todayIdx = cols.findIndex(col => col.some(c => c.date === today))
+    if (todayIdx < 0) return
+    const cellW = cellSize + GAP
+    scrollRef.current.scrollLeft = Math.max(0, todayIdx * cellW - scrollRef.current.clientWidth / 2)
+  }, [view, yearKey, cols, today, cellSize])
+
+  const heading = view === 'quarter' ? `Q${qQ} ${qYear}` : String(yearKey)
+
+  const atCurrentOrFuture = view === 'quarter'
+    ? (qYear > todayYear || (qYear === todayYear && qQ >= todayQ))
+    : yearKey >= todayYear
+
+  function goNext() {
+    if (view === 'quarter') {
+      const n = advanceQuarter(qYear, qQ, 1)
+      setQYear(n.year); setQQ(n.q)
+    } else {
+      setYearKey(y => Math.min(y + 1, todayYear))
+    }
+    setTooltipDate(null)
+  }
+
+  function goPrev() {
+    if (view === 'quarter') {
+      const p = advanceQuarter(qYear, qQ, -1)
+      setQYear(p.year); setQQ(p.q)
+    } else {
+      setYearKey(y => y - 1)
+    }
+    setTooltipDate(null)
+  }
+
+  function goToday() {
+    setQYear(todayYear); setQQ(todayQ); setYearKey(todayYear)
+    setTooltipDate(null)
+  }
+
+  const statsYear = view === 'quarter' ? qYear : yearKey
+  const yearSessions = useMemo(
+    () => sessions.filter(s => s.date.startsWith(String(statsYear))),
+    [sessions, statsYear],
+  )
+  const yearDates = useMemo(() => yearSessions.map(s => s.date), [yearSessions])
+  const daysElapsed =
+    statsYear < todayYear
+      ? statsYear % 4 === 0 && (statsYear % 100 !== 0 || statsYear % 400 === 0) ? 366 : 365
+      : Math.round((new Date(today + 'T00:00:00').getTime() - new Date(`${statsYear}-01-01T00:00:00`).getTime()) / 86400000) + 1
   const uniqueTrainingDays = new Set(yearDates).size
   const pct = daysElapsed > 0 ? Math.round((uniqueTrainingDays / daysElapsed) * 100) : 0
   const sessionsPerWeek = daysElapsed > 0 ? (yearSessions.length / (daysElapsed / 7)).toFixed(1) : '0'
   const dailyStreak = useMemo(() => computeDailyStreak(yearDates), [yearDates])
   const weeklyStreak = useMemo(() => computeWeeklyStreak(yearDates), [yearDates])
 
+  function getCellBg(date: string): string | undefined {
+    const daySessions = sessionsByDate.get(date)
+    if (!daySessions || daySessions.length === 0) return undefined
+    if (daySessions.length === 1) return dayAccent(daySessions[0].day)
+    return `linear-gradient(135deg, ${dayAccent(daySessions[0].day)} 50%, ${dayAccent(daySessions[1].day)} 50%)`
+  }
+
   function tooltipLabel(date: string): string {
     const dt = new Date(date + 'T00:00:00')
     const dayName = dt.toLocaleDateString('en-US', { weekday: 'long' })
     const fullDate = dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    const daySessions = sessionByDate.get(date) ?? []
+    const daySessions = sessionsByDate.get(date) ?? []
     const hasCardio = cardioDates.has(date)
-
     if (daySessions.length === 0 && !hasCardio) return `${dayName}, ${fullDate}`
-
     const parts: string[] = []
-    for (const s of daySessions) {
-      const dayLabel = s.day.charAt(0).toUpperCase() + s.day.slice(1)
-      parts.push(dayLabel + ' day')
-    }
+    for (const s of daySessions) parts.push(s.day.charAt(0).toUpperCase() + s.day.slice(1) + ' day')
     if (hasCardio) parts.push('Cardio')
     return `${parts.join(' · ')} · ${dayName}, ${fullDate}`
   }
 
   return (
     <div>
-      {/* Year navigation */}
+      {/* View toggle: Quarter / Year */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        {(['quarter', 'year'] as HeatView[]).map(v => (
+          <button
+            key={v}
+            onClick={() => { setView(v); setTooltipDate(null) }}
+            style={{
+              padding: '3px 12px',
+              borderRadius: 20,
+              fontSize: 12,
+              background: view === v ? PALETTE.dim : PALETTE.panel,
+              color: view === v ? PALETTE.ink : PALETTE.dim,
+              border: `1px solid ${PALETTE.line}`,
+              cursor: 'pointer',
+            }}
+          >
+            {v === 'quarter' ? 'Quarter' : 'Year'}
+          </button>
+        ))}
+      </div>
+
+      {/* Navigation: ‹ heading ◯ › */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <button
-          onClick={() => onYearChange(year - 1)}
-          style={{ minWidth: 36, minHeight: 36, color: PALETTE.dim, background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}
-          aria-label="previous year"
+          onClick={goPrev}
+          style={{ minWidth: 36, minHeight: 36, color: PALETTE.dim, background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}
+          aria-label="previous"
         >
           ‹
         </button>
-        <span style={{ fontSize: 13, color: PALETTE.dim }}>{year}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: PALETTE.dim }}>{heading}</span>
+          <button
+            onClick={goToday}
+            title="Jump to today"
+            style={{ fontSize: 14, color: PALETTE.mute, background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1, padding: '2px 4px' }}
+          >
+            ◯
+          </button>
+        </div>
         <button
-          onClick={() => onYearChange(Math.min(year + 1, currentYear))}
-          disabled={year >= currentYear}
-          style={{ minWidth: 36, minHeight: 36, color: year >= currentYear ? PALETTE.line : PALETTE.dim, background: 'none', border: 'none', fontSize: 18, cursor: year >= currentYear ? 'default' : 'pointer' }}
-          aria-label="next year"
+          onClick={goNext}
+          disabled={atCurrentOrFuture}
+          style={{ minWidth: 36, minHeight: 36, color: atCurrentOrFuture ? PALETTE.line : PALETTE.dim, background: 'none', border: 'none', fontSize: 20, cursor: atCurrentOrFuture ? 'default' : 'pointer' }}
+          aria-label="next"
         >
           ›
         </button>
       </div>
 
-      <div style={{ overflowX: 'auto' }}>
-        <div style={{ display: 'inline-block', minWidth: labelW + gridW }}>
-          {/* Month labels row */}
-          <div style={{ display: 'flex', marginLeft: labelW, marginBottom: 2, height: 12 }}>
-            {cols.map((_, ci) => (
-              <div
-                key={ci}
-                style={{ width: cellSize, marginRight: ci < cols.length - 1 ? gap : 0, flexShrink: 0, fontSize: 9, color: PALETTE.mute, lineHeight: 1 }}
-              >
-                {monthLabels.get(ci) ?? ''}
-              </div>
-            ))}
-          </div>
-
-          {/* Grid rows (Mon=0 … Sun=6) */}
+      {/* Grid */}
+      <div ref={scrollRef} style={{ overflowX: view === 'year' ? 'auto' : 'visible' }}>
+        <div style={{ display: 'inline-block' }}>
           <div style={{ display: 'flex' }}>
             {/* Weekday labels */}
-            <div style={{ width: labelW, display: 'flex', flexDirection: 'column', gap, marginRight: 0 }}>
+            <div style={{ width: labelW, flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
               {DOW_LABELS.map((label, ri) => (
-                <div key={ri} style={{ height: cellSize, fontSize: 8, color: PALETTE.mute, lineHeight: `${cellSize}px`, textAlign: 'right', paddingRight: 2 }}>
+                <div
+                  key={ri}
+                  style={{
+                    height: cellSize,
+                    marginBottom: ri < 6 ? GAP : 0,
+                    fontSize: view === 'quarter' ? 9 : 7,
+                    color: PALETTE.mute,
+                    lineHeight: `${cellSize}px`,
+                    textAlign: 'right',
+                    paddingRight: 3,
+                  }}
+                >
                   {label}
                 </div>
               ))}
             </div>
 
             {/* Week columns */}
-            <div style={{ display: 'flex', gap }}>
+            <div style={{ display: 'flex', gap: GAP }}>
               {cols.map((col, ci) => (
-                <div key={ci} style={{ display: 'flex', flexDirection: 'column', gap }}>
-                  {col.map(({ date, inYear }) => {
-                    const dayType = sessionMap.get(date)
-                    const hasCardio = cardioDates.has(date)
+                <div key={ci} style={{ display: 'flex', flexDirection: 'column', gap: GAP }}>
+                  {col.map(({ date, inRange }) => {
+                    const isFutureDate = date > today
                     const isToday = date === today
-                    const isFuture = date > today
-
-                    let bg: string
-                    if (!inYear || isFuture) bg = 'transparent'
-                    else if (dayType) bg = dayAccent(dayType)
-                    else bg = PALETTE.line
+                    const hasCardio = inRange && !isFutureDate && cardioDates.has(date)
+                    const bg = inRange && !isFutureDate ? (getCellBg(date) ?? PALETTE.line) : 'transparent'
 
                     return (
                       <div
                         key={date}
-                        onClick={() => setTooltipDate(tooltipDate === date ? null : date)}
-                        title={tooltipDate === date ? undefined : tooltipLabel(date)}
+                        onClick={() => { if (inRange && !isFutureDate) setTooltipDate(td => td === date ? null : date) }}
                         style={{
                           width: cellSize,
                           height: cellSize,
-                          borderRadius: 1,
-                          backgroundColor: bg,
-                          cursor: inYear && !isFuture ? 'pointer' : 'default',
-                          boxShadow: hasCardio && inYear && !isFuture
-                            ? `inset 0 0 0 1.5px ${CARDIO_PURPLE}`
-                            : isToday
-                              ? `0 0 0 1px ${PALETTE.fg}`
-                              : undefined,
-                          outline: isToday ? `1px solid ${PALETTE.fg}` : undefined,
-                          outlineOffset: isToday ? 1 : undefined,
+                          borderRadius: Math.max(1, Math.round(cellSize / 5)),
+                          background: bg,
+                          cursor: inRange && !isFutureDate ? 'pointer' : 'default',
+                          boxShadow: hasCardio ? `inset 0 0 0 ${cellSize > 8 ? 2 : 1.5}px ${CARDIO_PURPLE}` : undefined,
+                          outline: isToday && inRange ? `${cellSize > 8 ? 2 : 1}px solid ${PALETTE.fg}` : undefined,
+                          outlineOffset: 1,
                         }}
                       />
                     )
@@ -414,27 +509,54 @@ function Heatmap({ sessions, cardioLogs, year, onYearChange }: HeatmapProps) {
             </div>
           </div>
 
-          {/* Tooltip for tapped cell */}
-          {tooltipDate && (
-            <div
-              style={{
-                marginTop: 8,
-                padding: '8px 12px',
-                background: PALETTE.panel,
-                border: `1px solid ${PALETTE.line}`,
-                borderRadius: 8,
-                fontSize: 12,
-                color: PALETTE.fg,
-              }}
-            >
-              {tooltipLabel(tooltipDate)}
-            </div>
-          )}
+          {/* Month labels at BOTTOM */}
+          <div style={{ display: 'flex', marginLeft: labelW, marginTop: 4, height: 14 }}>
+            {cols.map((_, ci) => (
+              <div
+                key={ci}
+                style={{
+                  width: cellSize,
+                  marginRight: ci < cols.length - 1 ? GAP : 0,
+                  flexShrink: 0,
+                  fontSize: view === 'quarter' ? 9 : 7,
+                  color: PALETTE.mute,
+                  lineHeight: 1,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {monthLabels.get(ci) ?? ''}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
+      {/* Tooltip */}
+      {tooltipDate && (
+        <div
+          style={{
+            marginTop: 8,
+            padding: '8px 12px',
+            background: PALETTE.panel,
+            border: `1px solid ${PALETTE.line}`,
+            borderRadius: 8,
+            fontSize: 12,
+          }}
+        >
+          <p style={{ color: PALETTE.fg, marginBottom: onOpenDate ? 4 : 0 }}>{tooltipLabel(tooltipDate)}</p>
+          {onOpenDate && (
+            <button
+              onClick={() => { onOpenDate(tooltipDate); setTooltipDate(null) }}
+              style={{ fontSize: 11, color: PALETTE.push, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              Open in calendar →
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Legend */}
-      <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
         {(['push', 'pull', 'legs'] as const).map(d => (
           <span key={d} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: PALETTE.dim }}>
             <span style={{ width: 8, height: 8, borderRadius: 1, backgroundColor: dayAccent(d), display: 'inline-block' }} />
@@ -449,12 +571,12 @@ function Heatmap({ sessions, cardioLogs, year, onYearChange }: HeatmapProps) {
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 12 }}>
-        <StatCard label={`Days trained (${pct}%)`} value={String(uniqueTrainingDays)} accent={PALETTE.dim} />
+        <StatCard label={`Days ${statsYear} (${pct}%)`} value={String(uniqueTrainingDays)} accent={PALETTE.dim} />
         <StatCard label="Sessions / week" value={sessionsPerWeek} accent={PALETTE.dim} />
         <StatCard
           label="Current streak"
           value={`${dailyStreak.current} days`}
-          sub={`${weeklyStreak.current} wks on programme`}
+          sub={`${weeklyStreak.current} wks on prog`}
           accent={PALETTE.dim}
         />
         <StatCard
@@ -479,7 +601,11 @@ interface ChartPoint {
   volume?: number
 }
 
-export function ProgressPage() {
+interface ProgressPageProps {
+  onOpenDate?: (date: string) => void
+}
+
+export function ProgressPage({ onOpenDate }: ProgressPageProps = {}) {
   const [exercises, setExercises] = useState<DbExercise[]>([])
   const [selectedId, setSelectedId] = useState(() => localStorage.getItem(SELECTED_EX_KEY) ?? '')
   const [exerciseSets, setExerciseSets] = useState<(DbSetLog & { date: string; day: string })[]>([])
@@ -488,7 +614,6 @@ export function ProgressPage() {
   const [bodyMetrics, setBodyMetrics] = useState<DbBodyMetric[]>([])
   const [range, setRange] = useState<Range>('all')
   const [rangeInitialized, setRangeInitialized] = useState(false)
-  const [heatmapYear, setHeatmapYear] = useState(() => new Date().getFullYear())
 
   useEffect(() => {
     Promise.all([
@@ -535,14 +660,12 @@ export function ProgressPage() {
 
   const accent = selectedExercise ? dayAccent(selectedExercise.day) : PALETTE.fg
 
-  // Filter sets by range
   const start = rangeStart(range)
   const filteredSets = useMemo(
     () => (start ? exerciseSets.filter(s => s.date >= start) : exerciseSets),
     [exerciseSets, start],
   )
 
-  // PR history (all time — PRs don't reset per range)
   const prHistory = useMemo(() => {
     if (!selectedExercise || exerciseSets.length === 0) return new Map<string, { bestE1RM: number }>()
     const meta: SetWithMeta[] = exerciseSets.map(s => ({
@@ -555,7 +678,6 @@ export function ProgressPage() {
     return computeExercisePRHistory(meta)
   }, [selectedExercise, selectedId, exerciseSets, bodyMetrics])
 
-  // e1RM per session (all time, for running best computation)
   const allSessionE1rm = useMemo(() => {
     if (!selectedExercise || exerciseSets.length === 0) return new Map<string, number>()
     const byDate = new Map<string, typeof exerciseSets>()
@@ -579,7 +701,6 @@ export function ProgressPage() {
     return result
   }, [selectedExercise, exerciseSets, bodyMetrics])
 
-  // Chart data — derived from filteredSets
   const { chartData, stats } = useMemo(() => {
     if (!selectedExercise || filteredSets.length === 0) {
       return { chartData: [] as ChartPoint[], stats: null }
@@ -593,7 +714,6 @@ export function ProgressPage() {
     }
     const sortedDates = [...byDate.keys()].sort()
 
-    // e1RM per session date
     const sessionPoints = new Map<string, { e1rm: number; runningBest: number }>()
     let allTimeBest = 0
     for (const date of sortedDates) {
@@ -609,7 +729,6 @@ export function ProgressPage() {
       sessionPoints.set(date, { e1rm: rounded, runningBest: Math.round(runningBest * 10) / 10 })
     }
 
-    // Volume aggregation — per session for month, per week for year/all
     const volumePoints = new Map<string, number>()
     const volumeLabel = range === 'month' ? 'volume load per session' : 'volume load per week'
     for (const date of sortedDates) {
@@ -623,7 +742,6 @@ export function ProgressPage() {
       volumePoints.set(key, (volumePoints.get(key) ?? 0) + Math.round(vol))
     }
 
-    // Merge into combined chart array
     const combined = new Map<string, ChartPoint>()
     for (const [date, { e1rm, runningBest }] of sessionPoints) {
       combined.set(date, { date, e1rm, runningBest })
@@ -635,7 +753,6 @@ export function ProgressPage() {
     }
     const chartData = [...combined.values()].sort((a, b) => a.date.localeCompare(b.date))
 
-    // Stats
     const lastDate = sortedDates[sortedDates.length - 1]
     const firstDate = sortedDates[0]
     const lastE1RM = sessionPoints.get(lastDate)!.e1rm
@@ -766,7 +883,7 @@ export function ProgressPage() {
         </section>
       )}
 
-      {/* Exercise analysis */}
+      {/* Empty state */}
       {selectedExercise && filteredSets.length === 0 && (
         <p style={{ color: PALETTE.mute, fontSize: 14, textAlign: 'center', padding: '32px 0' }}>
           {exerciseSets.length === 0
@@ -775,33 +892,14 @@ export function ProgressPage() {
         </p>
       )}
 
+      {/* Chart + Stats (chart FIRST, stats below) */}
       {selectedExercise && chartData.length > 0 && stats && (
         <>
-          {/* Summary stats — 5 cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 20 }}>
-            <StatCard label="Current e1RM" value={`${stats.currentE1RM.toFixed(1)} lb`} accent={accent} />
-            <StatCard
-              label={`Change (${range === 'month' ? 'month' : range === 'year' ? 'year' : 'all time'})`}
-              value={`${stats.changeAbs >= 0 ? '+' : ''}${stats.changeAbs.toFixed(1)} lb`}
-              sub={`${stats.changePct >= 0 ? '+' : ''}${stats.changePct.toFixed(1)}%`}
-              accent={stats.changeAbs >= 0 ? accent : PALETTE.mute}
-            />
-            <StatCard label="All-time best e1RM" value={`${stats.allTimeBest.toFixed(1)} lb`} accent={PALETTE.pr} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 24 }}>
-            <StatCard
-              label="Top set"
-              value={`${stats.topSetWeight} lb × ${stats.topSetReps}`}
-              accent={accent}
-            />
-            <StatCard label="Sessions in range" value={String(stats.sessionsInRange)} accent={PALETTE.dim} />
-          </div>
-
-          {/* Dual-axis chart: volume bars (right) + e1RM line + running best dashed (left) */}
+          {/* Dual-axis chart */}
           <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 4 }}>
             Estimated 1RM &amp; {stats.volumeLabel}
           </p>
-          <div style={{ marginBottom: 28 }}>
+          <div style={{ marginBottom: 20 }}>
             <ResponsiveContainer width="100%" height={220}>
               <ComposedChart data={chartData} margin={{ top: 8, right: 40, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.line} vertical={false} />
@@ -813,7 +911,6 @@ export function ProgressPage() {
                   axisLine={{ stroke: PALETTE.line }}
                   interval="preserveStartEnd"
                 />
-                {/* Left axis: e1RM */}
                 <YAxis
                   yAxisId="e1rm"
                   domain={e1rmDomain}
@@ -821,7 +918,6 @@ export function ProgressPage() {
                   tickLine={false}
                   axisLine={false}
                 />
-                {/* Right axis: volume */}
                 <YAxis
                   yAxisId="vol"
                   orientation="right"
@@ -842,7 +938,6 @@ export function ProgressPage() {
                     return [`${(v as number).toLocaleString()} lb`, 'Volume']
                   }}
                 />
-                {/* Volume bars — behind the lines */}
                 <Bar
                   yAxisId="vol"
                   dataKey="volume"
@@ -851,7 +946,6 @@ export function ProgressPage() {
                   radius={[2, 2, 0, 0]}
                   isAnimationActive={false}
                 />
-                {/* Baseline reference at first e1RM in range */}
                 {firstE1rmInRange !== undefined && (
                   <ReferenceLine
                     yAxisId="e1rm"
@@ -861,7 +955,6 @@ export function ProgressPage() {
                     opacity={0.5}
                   />
                 )}
-                {/* Running best — dashed, same color, lower opacity */}
                 <Line
                   yAxisId="e1rm"
                   type="monotone"
@@ -875,7 +968,6 @@ export function ProgressPage() {
                   isAnimationActive={false}
                   connectNulls
                 />
-                {/* e1RM solid line */}
                 <Line
                   yAxisId="e1rm"
                   type="monotone"
@@ -887,7 +979,6 @@ export function ProgressPage() {
                   isAnimationActive={false}
                   connectNulls
                 />
-                {/* PR gold dots */}
                 {prDots.map(({ date, e1rm }) => (
                   <ReferenceDot
                     key={date}
@@ -903,17 +994,36 @@ export function ProgressPage() {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
+
+          {/* Summary stats below chart */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
+            <StatCard label="Current e1RM" value={`${stats.currentE1RM.toFixed(1)} lb`} accent={accent} />
+            <StatCard
+              label={`Change (${range === 'month' ? 'month' : range === 'year' ? 'year' : 'all time'})`}
+              value={`${stats.changeAbs >= 0 ? '+' : ''}${stats.changeAbs.toFixed(1)} lb`}
+              sub={`${stats.changePct >= 0 ? '+' : ''}${stats.changePct.toFixed(1)}%`}
+              accent={stats.changeAbs >= 0 ? accent : PALETTE.mute}
+            />
+            <StatCard label="All-time best e1RM" value={`${stats.allTimeBest.toFixed(1)} lb`} accent={PALETTE.pr} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 24 }}>
+            <StatCard
+              label="Top set"
+              value={`${stats.topSetWeight} lb × ${stats.topSetReps}`}
+              accent={accent}
+            />
+            <StatCard label="Sessions in range" value={String(stats.sessionsInRange)} accent={PALETTE.dim} />
+          </div>
         </>
       )}
 
-      {/* Compact heatmap — shown always */}
+      {/* Training history heatmap — always shown */}
       <section style={{ marginTop: selectedExercise && chartData.length > 0 ? 8 : 0 }}>
         <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 8 }}>Training history</p>
         <Heatmap
           sessions={sessions}
           cardioLogs={cardioLogs}
-          year={heatmapYear}
-          onYearChange={setHeatmapYear}
+          onOpenDate={onOpenDate}
         />
       </section>
     </div>

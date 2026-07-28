@@ -40,9 +40,11 @@ function formatFullDate(dateStr: string): string {
 
 interface WorkoutPageProps {
   onDayReady?: (day: Day | null) => void
+  calendarTarget?: string | null
+  onCalendarClosed?: () => void
 }
 
-export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
+export function WorkoutPage({ onDayReady, calendarTarget, onCalendarClosed }: WorkoutPageProps) {
   const [session, setSession] = useState<DbSession | null>(null)
   const [loading, setLoading] = useState(true)
   const [overrideDay, setOverrideDay] = useState<Day | null>(null)
@@ -51,6 +53,10 @@ export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
   const [sessionNote, setSessionNote] = useState('')
   const onDayReadyRef = useRef(onDayReady)
   useEffect(() => { onDayReadyRef.current = onDayReady })
+
+  useEffect(() => {
+    if (calendarTarget) setShowCalendar(true)
+  }, [calendarTarget])
 
   const init = useCallback(async () => {
     const last = await getLastSession()
@@ -141,7 +147,7 @@ export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
           Loading…
         </div>
         {showCalendar && (
-          <CalendarView onClose={() => setShowCalendar(false)} onSessionChanged={init} />
+          <CalendarView onClose={() => { setShowCalendar(false); onCalendarClosed?.() }} onSessionChanged={init} initialDate={calendarTarget ?? undefined} />
         )}
       </>
     )
@@ -185,7 +191,7 @@ export function WorkoutPage({ onDayReady }: WorkoutPageProps) {
           )}
         </div>
         {showCalendar && (
-          <CalendarView onClose={() => setShowCalendar(false)} onSessionChanged={init} />
+          <CalendarView onClose={() => { setShowCalendar(false); onCalendarClosed?.() }} onSessionChanged={init} initialDate={calendarTarget ?? undefined} />
         )}
       </>
     )

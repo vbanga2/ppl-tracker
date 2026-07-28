@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import type { DbBlock, DbExercise, DbSession, DbSetLog } from '../../data/db'
-import type { PlateInventory } from '../../domain/plates'
 import { logSet, deleteSet, getAllSetsForExercise } from '../../data/repo'
 import { suggestNext } from '../../domain/progression'
 import { formatRepSpec } from '../../domain/plan'
-import { calculatePlates, formatPlates } from '../../domain/plates'
 import { computeExercisePRHistory } from '../../domain/records'
 import type { SetWithMeta } from '../../domain/records'
 import { Stepper } from '../../ui/Stepper'
@@ -21,26 +19,8 @@ export interface BlockLoggerProps {
   todayByBlock: Map<string, DbSetLog[]>
   /** Previous-session sets keyed by blockId, pre-loaded by ExerciseCard */
   prevSetsByBlock: Map<string, DbSetLog[]>
-  inventory: PlateInventory[]
   /** Called after a set is logged or deleted so ExerciseCard can refresh */
   onSetChanged: () => Promise<void>
-}
-
-function PlateDisplay({ weight, inventory }: { weight: number; inventory: PlateInventory[] }) {
-  if (weight <= 0) return null
-  const { perSide, achievable, nearestBelow } = calculatePlates(weight, inventory)
-  if (!achievable) {
-    return (
-      <p className="text-xs mt-1" style={{ color: PALETTE.mute }}>
-        Can't load {weight} lb — nearest: {nearestBelow} lb ({formatPlates(perSide)} per side)
-      </p>
-    )
-  }
-  return (
-    <p className="text-xs mt-1" style={{ color: PALETTE.dim }}>
-      {formatPlates(perSide)} per side
-    </p>
-  )
 }
 
 export function BlockLogger({
@@ -50,7 +30,6 @@ export function BlockLogger({
   allBlocks,
   todayByBlock,
   prevSetsByBlock,
-  inventory,
   onSetChanged,
 }: BlockLoggerProps) {
   const [weight, setWeight] = useState(0)
@@ -268,7 +247,6 @@ export function BlockLogger({
       <div className="flex flex-col gap-3">
         <div>
           <Stepper label="Weight" value={weight} onChange={handleWeightChange} step={exercise.incrementLb} min={0} />
-          {exercise.incrementLb > 0 && <PlateDisplay weight={weight} inventory={inventory} />}
         </div>
         <Stepper label="Reps" value={reps} onChange={handleRepsChange} min={1} max={100} />
         <Stepper label="RIR" value={rir} onChange={setRir} min={0} max={10} />

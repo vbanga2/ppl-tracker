@@ -93,6 +93,7 @@ interface DayData {
 interface CalendarViewProps {
   onClose: () => void
   onSessionChanged?: () => void
+  initialDate?: string
 }
 
 // ─── Grid builder ────────────────────────────────────────────────────────────
@@ -532,11 +533,12 @@ function RetroSessionView({ session, onBack }: RetroSessionViewProps) {
 
 const DAY_HEADERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
-export function CalendarView({ onClose, onSessionChanged }: CalendarViewProps) {
+export function CalendarView({ onClose, onSessionChanged, initialDate }: CalendarViewProps) {
   const today = todayString()
-  const [year, setYear] = useState(() => parseInt(today.slice(0, 4)))
-  const [month, setMonth] = useState(() => parseInt(today.slice(5, 7)))
-  const [selectedDate, setSelectedDate] = useState<string | null>(today)
+  const startDate = initialDate ?? today
+  const [year, setYear] = useState(() => parseInt(startDate.slice(0, 4)))
+  const [month, setMonth] = useState(() => parseInt(startDate.slice(5, 7)))
+  const [selectedDate, setSelectedDate] = useState<string | null>(startDate)
   const [loadKey, setLoadKey] = useState(0)
   const [mode, setMode] = useState<'calendar' | 'retroSession'>('calendar')
   const [activeSession, setActiveSession] = useState<DbSession | null>(null)

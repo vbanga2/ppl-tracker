@@ -138,6 +138,8 @@ const cardioStyle = {
     justifyContent: 'space-between',
     padding: '12px 16px',
     cursor: 'pointer',
+    width: '100%',
+    minHeight: 48,
   } as React.CSSProperties,
   pill: {
     display: 'inline-block',

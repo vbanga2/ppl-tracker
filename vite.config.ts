@@ -1,12 +1,22 @@
+import { execSync } from 'node:child_process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const gitSha = (() => {
+  try {
+    return execSync('git rev-parse --short HEAD').toString().trim()
+  } catch {
+    return 'unknown'
+  }
+})()
+
 export default defineConfig({
   base: '/ppl-tracker/',
   define: {
     __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+    __GIT_SHA__: JSON.stringify(gitSha),
   },
   plugins: [
     react(),

@@ -21,9 +21,15 @@ export default function App({ storageGranted }: AppProps) {
   const [tab, setTab] = useState<Tab>('workout')
   const [showInstallGate, setShowInstallGate] = useState(false)
   const [sessionDay, setSessionDay] = useState<Day | null>(null)
+  const [calendarTarget, setCalendarTarget] = useState<string | null>(null)
   const prevTabRef = useRef<Tab>('workout')
   const sessionDayRef = useRef<Day | null>(null)
   sessionDayRef.current = sessionDay
+
+  function openCalendar(date: string) {
+    setCalendarTarget(date)
+    setTab('workout')
+  }
 
   useEffect(() => {
     const isStandalone = (window.navigator as Navigator & { standalone?: boolean }).standalone
@@ -57,9 +63,13 @@ export default function App({ storageGranted }: AppProps) {
         style={{ paddingBottom: 'calc(56px + max(env(safe-area-inset-bottom), 8px))' }}
       >
         {tab === 'workout' && (
-          <WorkoutPage onDayReady={setSessionDay} />
+          <WorkoutPage
+            onDayReady={setSessionDay}
+            calendarTarget={calendarTarget}
+            onCalendarClosed={() => setCalendarTarget(null)}
+          />
         )}
-        {tab === 'progress' && <ProgressPage />}
+        {tab === 'progress' && <ProgressPage onOpenDate={openCalendar} />}
         {tab === 'body' && <BodyPage />}
         {tab === 'nutrition' && <NutritionPage />}
         {tab === 'settings' && <SettingsPage />}
