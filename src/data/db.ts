@@ -176,6 +176,21 @@ export interface DbNutritionTarget {
   deletedAt: number | null
 }
 
+export interface DbProfile {
+  key: 'main'
+  heightCm: number | null
+  heightUnit: 'cm' | 'imperial'
+  heightFt: number | null
+  heightIn: number | null
+  sex: 'male' | 'female' | null
+  ageYears: number | null
+  activityLevel: 'sedentary' | 'lightly' | 'moderately' | 'very' | 'extra' | null
+  goal: 'maintenance' | 'fat_loss' | 'muscle_gain' | 'recomp' | null
+  surplusChoice: '200-500' | '500-1000' | null
+  microTargetsJson: string | null
+  updatedAt: number
+}
+
 export interface DbExerciseNote {
   id: string
   sessionId: string
@@ -231,6 +246,7 @@ class PPLDatabase extends Dexie {
   bodyMeasurements!: EntityTable<DbBodyMeasurement, 'id'>
   progressPhotos!: EntityTable<DbProgressPhoto, 'id'>
   nutritionTargets!: EntityTable<DbNutritionTarget, 'id'>
+  profile!: EntityTable<DbProfile, 'key'>
 
   constructor() {
     super('ppl-tracker')
@@ -310,6 +326,10 @@ class PPLDatabase extends Dexie {
       await tx.table('mealEntries').toCollection().modify((record: Record<string, unknown>) => {
         if (record['label'] === undefined) record['label'] = null
       })
+    })
+    // Version 11: profile table for height, sex, age, TDEE goal settings
+    this.version(11).stores({
+      profile: 'key',
     })
   }
 }

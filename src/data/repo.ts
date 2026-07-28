@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbFood, DbMealEntry, DbProgressPhoto, DbSession, DbSetLog } from './db'
+import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbFood, DbMealEntry, DbNutritionTarget, DbProfile, DbProgressPhoto, DbSession, DbSetLog } from './db'
 import type { RepSpec, LoadSpec } from '../domain/plan'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 
@@ -458,6 +458,63 @@ export async function updateMealEntry(
 export async function deleteMealEntry(id: string): Promise<void> {
   const ts = now()
   await db.mealEntries.update(id, { deletedAt: ts, updatedAt: ts })
+}
+
+export async function getMealEntriesForDateRange(startDate: string, endDate: string): Promise<DbMealEntry[]> {
+  return db.mealEntries
+    .where('date').between(startDate, endDate, true, true)
+    .filter(m => m.deletedAt === null)
+    .toArray()
+}
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
+export async function getProfile(): Promise<DbProfile | undefined> {
+  return db.profile.get('main')
+}
+
+export async function saveProfile(fields: Partial<Omit<DbProfile, 'key' | 'updatedAt'>>): Promise<void> {
+  const existing = await db.profile.get('main')
+  const record: DbProfile = {
+    heightCm: null,
+    heightUnit: 'imperial',
+    heightFt: null,
+    heightIn: null,
+    sex: null,
+    ageYears: null,
+    activityLevel: null,
+    goal: null,
+    surplusChoice: null,
+    microTargetsJson: null,
+    ...existing,
+    ...fields,
+    key: 'main',
+    updatedAt: now(),
+  }
+  await db.profile.put(record)
+}
+
+// ─── Nutrition targets ────────────────────────────────────────────────────────
+
+export async function getActiveNutritionTarget(date: string): Promise<DbNutritionTarget | undefined> {
+  const all = await db.nutritionTargets
+    .where('effectiveFrom').belowOrEqual(date)
+    .filter(t => t.deletedAt === null)
+    .sortBy('effectiveFrom')
+  return all[all.length - 1]
+}
+
+export async function addNutritionTarget(
+  target: Omit<DbNutritionTarget, 'id' | 'updatedAt' | 'deletedAt'>,
+): Promise<DbNutritionTarget> {
+  const ts = now()
+  const record: DbNutritionTarget = { ...target, id: crypto.randomUUID(), updatedAt: ts, deletedAt: null }
+  await db.nutritionTargets.add(record)
+  return record
+}
+
+export async function getAllNutritionTargets(): Promise<DbNutritionTarget[]> {
+  return db.nutritionTargets.filter(t => t.deletedAt === null).sortBy('effectiveFrom')
 }
 
 // ─── All-Sets history (for charts) ───────────────────────────────────────────
