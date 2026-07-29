@@ -89,7 +89,7 @@ export function SettingsPage() {
   const buildSha = typeof __GIT_SHA__ !== 'undefined' ? __GIT_SHA__ : '—'
 
   return (
-    <div className="px-4 py-6 max-w-lg mx-auto">
+    <div className="px-4 max-w-lg mx-auto" style={{ paddingTop: 'max(env(safe-area-inset-top), 24px)', paddingBottom: 24 }}>
       <h1 className="text-2xl font-medium mb-6" style={{ color: PALETTE.fg }}>
         Settings
       </h1>

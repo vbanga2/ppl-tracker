@@ -16,7 +16,7 @@ import { DayPicker } from './DayPicker'
 import { ExerciseList } from './ExerciseList'
 import { CardioLogger } from './CardioLogger'
 import { CalendarView } from '../calendar/CalendarView'
-import { PALETTE, dayAccent } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER, dayAccent } from '../../ui/tokens'
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -127,8 +127,14 @@ export function WorkoutPage({ onDayReady, calendarTarget, onCalendarClosed }: Wo
   const dateHeader = (
     <button
       onClick={() => setShowCalendar(true)}
-      className="w-full flex items-center justify-between px-4 py-3 border-b"
-      style={{ borderColor: PALETTE.line, minHeight: 48 }}
+      className="w-full flex items-center justify-between px-4 border-b"
+      style={{
+        borderColor: BORDER.subtle,
+        minHeight: 48,
+        paddingTop: 'max(env(safe-area-inset-top), 12px)',
+        paddingBottom: 12,
+        background: SURFACE.base,
+      }}
     >
       <span className="text-sm" style={{ color: PALETTE.dim }}>
         {formatFullDate(todayDate())}
@@ -205,7 +211,7 @@ export function WorkoutPage({ onDayReady, calendarTarget, onCalendarClosed }: Wo
       <div>
         <div
           className="px-4 py-4 border-b"
-          style={{ borderColor: PALETTE.line }}
+          style={{ borderColor: BORDER.strong, background: SURFACE.elevated }}
         >
           <div className="flex items-center justify-between">
             <button

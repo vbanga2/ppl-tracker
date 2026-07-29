@@ -27,7 +27,7 @@ import {
   getProfile,
   saveProfile,
 } from '../../data/repo'
-import { PALETTE } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER } from '../../ui/tokens'
 
 type Range = 'month' | 'year' | 'all'
 type PhotoPoseFilter = 'all' | 'front' | 'side' | 'back' | 'other'
@@ -86,8 +86,8 @@ async function processPhoto(file: File): Promise<{ blob: Blob; widthPx: number; 
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
-  background: PALETTE.panel,
-  border: `1px solid ${PALETTE.line}`,
+  background: SURFACE.sunken,
+  border: `1px solid ${BORDER.subtle}`,
   borderRadius: 6,
   color: PALETTE.fg,
   padding: '8px',
@@ -111,7 +111,7 @@ export function BodyPage() {
   const [activeSection, setActiveSection] = useState<'weight' | 'measurements' | 'photos'>('weight')
 
   return (
-    <div style={{ padding: '24px 16px 16px', color: PALETTE.fg }}>
+    <div style={{ paddingTop: 'max(env(safe-area-inset-top), 24px)', paddingLeft: 16, paddingRight: 16, paddingBottom: 16, color: PALETTE.fg }}>
       <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 16 }}>Body</h1>
 
       {/* Section tabs */}
@@ -126,9 +126,9 @@ export function BodyPage() {
               borderRadius: 20,
               fontSize: 13,
               fontWeight: activeSection === s ? 500 : 400,
-              background: activeSection === s ? PALETTE.fg : PALETTE.panel,
+              background: activeSection === s ? PALETTE.fg : SURFACE.raised,
               color: activeSection === s ? PALETTE.ink : PALETTE.dim,
-              border: `1px solid ${activeSection === s ? PALETTE.fg : PALETTE.line}`,
+              border: `1px solid ${activeSection === s ? PALETTE.fg : BORDER.subtle}`,
               cursor: 'pointer',
             }}
           >
@@ -166,6 +166,7 @@ function WeightSection() {
   const [heightInStr, setHeightInStr] = useState('')
   const [heightCmStr, setHeightCmStr] = useState('')
   const [savingHeight, setSavingHeight] = useState(false)
+  const [heightExpanded, setHeightExpanded] = useState(false)
 
   function loadMetrics() {
     getAllBodyMetrics().then(setAllMetrics)
@@ -269,10 +270,22 @@ function WeightSection() {
         await saveProfile({ heightUnit: 'cm', heightCm: cm, heightFt: null, heightIn: null })
       }
       setProfile(await getProfile() ?? null)
+      setHeightExpanded(false)
     } finally {
       setSavingHeight(false)
     }
   }
+
+  const profileHeightDisplay = useMemo((): string | null => {
+    if (!profile) return null
+    if (profile.heightUnit === 'imperial' && profile.heightFt !== null) {
+      return `${profile.heightFt} ft ${profile.heightIn ?? 0} in`
+    }
+    if (profile.heightUnit === 'cm' && profile.heightCm !== null) {
+      return `${Math.round(profile.heightCm)} cm`
+    }
+    return null
+  }, [profile])
 
   const profileHeightCm = useMemo((): number | null => {
     if (!profile) return null
@@ -354,130 +367,160 @@ function WeightSection() {
         </div>
       )}
 
-      {/* Entry form */}
+      {/* Log measurement — elevated panel */}
       <section style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 10 }}>
+        <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
           {editingId ? 'Edit measurement' : 'Log measurement'}
         </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div>
-            <label style={labelStyle}>Date</label>
-            <input
-              type="date"
-              value={date}
-              max={todayStr()}
-              onChange={e => setDate(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Weight (lb)</label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={weightStr}
-              onChange={e => setWeightStr(e.target.value)}
-              placeholder="185"
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Body fat % <span style={{ color: PALETTE.mute, fontWeight: 400 }}>(optional)</span></label>
-            <input
-              type="number"
-              inputMode="decimal"
-              value={fatStr}
-              onChange={e => setFatStr(e.target.value)}
-              placeholder="Optional"
-              style={inputStyle}
-            />
-          </div>
+        <div style={{ background: SURFACE.elevated, border: `1px solid ${BORDER.strong}`, borderRadius: 12, padding: '14px 14px 10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <label style={labelStyle}>Date</label>
+              <input
+                type="date"
+                value={date}
+                max={todayStr()}
+                onChange={e => setDate(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Weight (lb)</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={weightStr}
+                onChange={e => setWeightStr(e.target.value)}
+                placeholder="185"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Body fat % <span style={{ color: PALETTE.mute, fontWeight: 400 }}>(optional)</span></label>
+              <input
+                type="number"
+                inputMode="decimal"
+                value={fatStr}
+                onChange={e => setFatStr(e.target.value)}
+                placeholder="Optional"
+                style={inputStyle}
+              />
+            </div>
 
-          {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
+            {error && <p style={{ fontSize: 12, color: '#f87171' }}>{error}</p>}
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={handleSave}
-              disabled={saving || !weightStr}
-              style={{
-                flex: 1,
-                background: PALETTE.fg,
-                color: PALETTE.ink,
-                border: 'none',
-                borderRadius: 8,
-                padding: '14px',
-                fontSize: 15,
-                fontWeight: 500,
-                cursor: saving || !weightStr ? 'default' : 'pointer',
-                opacity: saving || !weightStr ? 0.5 : 1,
-                minHeight: 48,
-              }}
-            >
-              {saving ? 'Saving…' : editingId ? 'Update' : 'Save measurement'}
-            </button>
-            {editingId && (
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
-                onClick={cancelEdit}
+                onClick={handleSave}
+                disabled={saving || !weightStr}
                 style={{
-                  background: PALETTE.line,
-                  color: PALETTE.dim,
+                  flex: 1,
+                  background: PALETTE.fg,
+                  color: PALETTE.ink,
                   border: 'none',
                   borderRadius: 8,
-                  padding: '14px 16px',
+                  padding: '14px',
                   fontSize: 15,
-                  cursor: 'pointer',
+                  fontWeight: 500,
+                  cursor: saving || !weightStr ? 'default' : 'pointer',
+                  opacity: saving || !weightStr ? 0.5 : 1,
                   minHeight: 48,
                 }}
               >
-                Cancel
+                {saving ? 'Saving…' : editingId ? 'Update' : 'Save measurement'}
               </button>
-            )}
+              {editingId && (
+                <button
+                  onClick={cancelEdit}
+                  style={{
+                    background: PALETTE.line,
+                    color: PALETTE.dim,
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '14px 16px',
+                    fontSize: 15,
+                    cursor: 'pointer',
+                    minHeight: 48,
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* Height for BMI */}
+      {/* Height — compact row, expands to edit */}
       <section style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 10 }}>Height (for BMI)</p>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          {(['imperial', 'cm'] as const).map(u => (
+        {profileHeightDisplay && !heightExpanded ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: '10px 14px', minHeight: 44 }}>
+            <span style={{ fontSize: 13, color: PALETTE.dim }}>
+              Height <span style={{ color: PALETTE.fg, fontVariantNumeric: 'tabular-nums' }}>{profileHeightDisplay}</span>
+            </span>
             <button
-              key={u}
-              onClick={() => setHeightUnit(u)}
-              style={{ flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 12, fontWeight: heightUnit === u ? 500 : 400, background: heightUnit === u ? PALETTE.fg : PALETTE.panel, color: heightUnit === u ? PALETTE.ink : PALETTE.dim, border: `1px solid ${heightUnit === u ? PALETTE.fg : PALETTE.line}`, cursor: 'pointer' }}
+              onClick={() => setHeightExpanded(true)}
+              style={{ fontSize: 13, color: PALETTE.push, background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', minHeight: 40 }}
             >
-              {u === 'imperial' ? 'ft / in' : 'cm'}
+              Edit
             </button>
-          ))}
-        </div>
-        {heightUnit === 'imperial' ? (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Feet</label>
-              <input type="number" inputMode="numeric" value={heightFtStr} onChange={e => setHeightFtStr(e.target.value)} placeholder="5" style={inputStyle} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={labelStyle}>Inches</label>
-              <input type="number" inputMode="decimal" value={heightInStr} onChange={e => setHeightInStr(e.target.value)} placeholder="10" style={inputStyle} />
-            </div>
           </div>
+        ) : !profileHeightDisplay && !heightExpanded ? (
+          <button
+            onClick={() => setHeightExpanded(true)}
+            style={{ width: '100%', minHeight: 44, background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, color: PALETTE.mute, fontSize: 13, cursor: 'pointer', textAlign: 'left', padding: '0 14px' }}
+          >
+            Add height to enable BMI →
+          </button>
         ) : (
-          <div>
-            <label style={labelStyle}>Centimetres</label>
-            <input type="number" inputMode="decimal" value={heightCmStr} onChange={e => setHeightCmStr(e.target.value)} placeholder="178" style={inputStyle} />
+          <div style={{ background: SURFACE.elevated, border: `1px solid ${BORDER.strong}`, borderRadius: 12, padding: '14px' }}>
+            <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Height</p>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              {(['imperial', 'cm'] as const).map(u => (
+                <button
+                  key={u}
+                  onClick={() => setHeightUnit(u)}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 12, fontWeight: heightUnit === u ? 500 : 400, background: heightUnit === u ? PALETTE.fg : SURFACE.raised, color: heightUnit === u ? PALETTE.ink : PALETTE.dim, border: `1px solid ${heightUnit === u ? PALETTE.fg : BORDER.subtle}`, cursor: 'pointer' }}
+                >
+                  {u === 'imperial' ? 'ft / in' : 'cm'}
+                </button>
+              ))}
+            </div>
+            {heightUnit === 'imperial' ? (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Feet</label>
+                  <input type="number" inputMode="numeric" value={heightFtStr} onChange={e => setHeightFtStr(e.target.value)} placeholder="5" style={inputStyle} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={labelStyle}>Inches</label>
+                  <input type="number" inputMode="decimal" value={heightInStr} onChange={e => setHeightInStr(e.target.value)} placeholder="10" style={inputStyle} />
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Centimetres</label>
+                <input type="number" inputMode="decimal" value={heightCmStr} onChange={e => setHeightCmStr(e.target.value)} placeholder="178" style={inputStyle} />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => void handleSaveHeight()}
+                disabled={savingHeight}
+                style={{ flex: 1, minHeight: 44, background: PALETTE.fg, color: PALETTE.ink, border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 500, cursor: savingHeight ? 'default' : 'pointer', opacity: savingHeight ? 0.6 : 1 }}
+              >
+                {savingHeight ? 'Saving…' : 'Save height'}
+              </button>
+              {profileHeightDisplay && (
+                <button
+                  onClick={() => setHeightExpanded(false)}
+                  style={{ minHeight: 44, padding: '0 16px', background: PALETTE.line, color: PALETTE.dim, border: 'none', borderRadius: 8, fontSize: 14, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
-        )}
-        <button
-          onClick={() => void handleSaveHeight()}
-          disabled={savingHeight}
-          style={{ marginTop: 10, width: '100%', minHeight: 44, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, color: PALETTE.dim, fontSize: 14, cursor: savingHeight ? 'default' : 'pointer', opacity: savingHeight ? 0.6 : 1 }}
-        >
-          {savingHeight ? 'Saving…' : 'Save height'}
-        </button>
-        {profileHeightCm && (
-          <p style={{ fontSize: 12, color: PALETTE.mute, marginTop: 8, textAlign: 'center' }}>
-            Saved: {Math.round(profileHeightCm)} cm · {Math.floor(profileHeightCm / 30.48)} ft {Math.round((profileHeightCm / 2.54) % 12)} in
-          </p>
         )}
       </section>
 
@@ -515,186 +558,192 @@ function WeightSection() {
         </p>
       ) : (
         <section style={{ marginBottom: 24 }}>
-          <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 8 }}>
+          <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
             {[hasFat && 'body fat', hasBmi && 'BMI'].filter(Boolean).length > 0
               ? `Bodyweight · ${[hasFat && 'body fat', hasBmi && 'BMI'].filter(Boolean).join(' · ')}`
               : 'Bodyweight over time'}
           </p>
 
-          <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={chartData} margin={{ top: 8, right: hasFat && hasBmi ? 60 : (hasFat || hasBmi) ? 36 : 8, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.line} vertical={false} />
-              <XAxis
-                dataKey="date"
-                tickFormatter={fmtDate}
-                tick={{ fill: PALETTE.mute, fontSize: 10 }}
-                tickLine={false}
-                axisLine={{ stroke: PALETTE.line }}
-                interval="preserveStartEnd"
-              />
-              <YAxis
-                yAxisId="weight"
-                domain={weightDomain}
-                tick={{ fill: PALETTE.mute, fontSize: 10 }}
-                tickLine={false}
-                axisLine={false}
-              />
-              {hasFat && (
+          {/* Chart in sunken well */}
+          <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: '12px 4px 8px', marginBottom: 8 }}>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart data={chartData} margin={{ top: 8, right: hasFat && hasBmi ? 60 : (hasFat || hasBmi) ? 36 : 8, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke={BORDER.subtle} vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={fmtDate}
+                  tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={{ stroke: BORDER.subtle }}
+                  interval="preserveStartEnd"
+                />
                 <YAxis
-                  yAxisId="fat"
-                  orientation="right"
-                  domain={[0, 'auto']}
+                  yAxisId="weight"
+                  domain={weightDomain}
                   tick={{ fill: PALETTE.mute, fontSize: 10 }}
                   tickLine={false}
                   axisLine={false}
-                  tickFormatter={(v: number) => `${v}%`}
                 />
-              )}
-              {hasBmi && (
-                <YAxis
-                  yAxisId="bmi"
-                  orientation="right"
-                  domain={['auto', 'auto']}
-                  tick={{ fill: PALETTE.mute, fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: number) => v.toFixed(1)}
+                {hasFat && (
+                  <YAxis
+                    yAxisId="fat"
+                    orientation="right"
+                    domain={[0, 'auto']}
+                    tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v: number) => `${v}%`}
+                  />
+                )}
+                {hasBmi && (
+                  <YAxis
+                    yAxisId="bmi"
+                    orientation="right"
+                    domain={['auto', 'auto']}
+                    tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v: number) => v.toFixed(1)}
+                  />
+                )}
+                <Tooltip
+                  {...tooltipStyle}
+                  labelFormatter={(label: unknown) =>
+                    typeof label === 'string' ? fmtDate(label) : String(label ?? '')
+                  }
+                  formatter={(value: unknown, name: unknown) => {
+                    if (name === 'weightLb') return [`${value} lb`, 'Weight']
+                    if (name === 'ma7') return [`${value} lb`, '7-day avg']
+                    if (name === 'bmi') return [String(value), 'BMI']
+                    return [`${value}%`, 'Body fat']
+                  }}
                 />
-              )}
-              <Tooltip
-                {...tooltipStyle}
-                labelFormatter={(label: unknown) =>
-                  typeof label === 'string' ? fmtDate(label) : String(label ?? '')
-                }
-                formatter={(value: unknown, name: unknown) => {
-                  if (name === 'weightLb') return [`${value} lb`, 'Weight']
-                  if (name === 'ma7') return [`${value} lb`, '7-day avg']
-                  if (name === 'bmi') return [String(value), 'BMI']
-                  return [`${value}%`, 'Body fat']
-                }}
-              />
-              <Line
-                yAxisId="weight"
-                type="monotone"
-                dataKey="ma7"
-                stroke={PALETTE.push}
-                strokeWidth={2}
-                strokeDasharray="5 3"
-                dot={false}
-                activeDot={{ r: 4 }}
-                isAnimationActive={false}
-                connectNulls
-              />
-              <Line
-                yAxisId="weight"
-                type="monotone"
-                dataKey="weightLb"
-                stroke={PALETTE.fg}
-                strokeWidth={1.5}
-                opacity={0.6}
-                dot={{ r: 3, fill: PALETTE.fg, strokeWidth: 0 }}
-                activeDot={{ r: 4 }}
-                isAnimationActive={false}
-                connectNulls
-              />
-              {hasFat && (
                 <Line
-                  yAxisId="fat"
+                  yAxisId="weight"
                   type="monotone"
-                  dataKey="bodyFatPct"
-                  stroke={PALETTE.dim}
+                  dataKey="ma7"
+                  stroke={PALETTE.push}
                   strokeWidth={2}
-                  strokeDasharray="4 2"
-                  dot={{ r: 3, fill: PALETTE.dim, strokeWidth: 0 }}
+                  strokeDasharray="5 3"
+                  dot={false}
                   activeDot={{ r: 4 }}
                   isAnimationActive={false}
                   connectNulls
                 />
-              )}
-              {hasBmi && (
                 <Line
-                  yAxisId="bmi"
+                  yAxisId="weight"
                   type="monotone"
-                  dataKey="bmi"
-                  stroke={PALETTE.cardioBorder}
-                  strokeWidth={2}
-                  strokeDasharray="3 3"
-                  dot={{ r: 3, fill: PALETTE.cardioBorder, strokeWidth: 0 }}
+                  dataKey="weightLb"
+                  stroke={PALETTE.fg}
+                  strokeWidth={1.5}
+                  opacity={0.6}
+                  dot={{ r: 3, fill: PALETTE.fg, strokeWidth: 0 }}
                   activeDot={{ r: 4 }}
                   isAnimationActive={false}
                   connectNulls
                 />
+                {hasFat && (
+                  <Line
+                    yAxisId="fat"
+                    type="monotone"
+                    dataKey="bodyFatPct"
+                    stroke={PALETTE.dim}
+                    strokeWidth={2}
+                    strokeDasharray="4 2"
+                    dot={{ r: 3, fill: PALETTE.dim, strokeWidth: 0 }}
+                    activeDot={{ r: 4 }}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                )}
+                {hasBmi && (
+                  <Line
+                    yAxisId="bmi"
+                    type="monotone"
+                    dataKey="bmi"
+                    stroke={PALETTE.cardioBorder}
+                    strokeWidth={2}
+                    strokeDasharray="3 3"
+                    dot={{ r: 3, fill: PALETTE.cardioBorder, strokeWidth: 0 }}
+                    activeDot={{ r: 4 }}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+
+            <div style={{ display: 'flex', gap: 12, padding: '0 12px 4px', fontSize: 11, color: PALETTE.mute, flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 16, height: 2, background: PALETTE.fg, opacity: 0.6, display: 'inline-block' }} />
+                Daily
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 16, height: 2, background: PALETTE.push, display: 'inline-block' }} />
+                7-day avg
+              </span>
+              {profileHeightCm && (
+                <button
+                  onClick={() => setShowBmi(v => !v)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: showBmi ? PALETTE.cardioBorder : PALETTE.mute, fontSize: 11, padding: 0 }}
+                >
+                  <span style={{ width: 16, height: 2, background: PALETTE.cardioBorder, opacity: showBmi ? 1 : 0.35, display: 'inline-block' }} />
+                  BMI {showBmi ? '(on)' : '(off)'}
+                </button>
               )}
-            </ComposedChart>
-          </ResponsiveContainer>
-
-          <div style={{ display: 'flex', gap: 12, marginTop: 4, fontSize: 11, color: PALETTE.mute, flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 16, height: 2, background: PALETTE.fg, opacity: 0.6, display: 'inline-block' }} />
-              Daily
-            </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 16, height: 2, background: PALETTE.push, display: 'inline-block' }} />
-              7-day avg
-            </span>
-            {profileHeightCm && (
-              <button
-                onClick={() => setShowBmi(v => !v)}
-                style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: showBmi ? PALETTE.cardioBorder : PALETTE.mute, fontSize: 11, padding: 0 }}
-              >
-                <span style={{ width: 16, height: 2, background: PALETTE.cardioBorder, opacity: showBmi ? 1 : 0.35, display: 'inline-block' }} />
-                BMI {showBmi ? '(on)' : '(off)'}
-              </button>
-            )}
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            {latest && (
-              <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '8px 12px', flex: 1 }}>
-                <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>Current weight</p>
-                <p style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{latest.weightLb} lb</p>
-              </div>
-            )}
-            {changeAbs !== null && changePct !== null && (
-              <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '8px 12px', flex: 1 }}>
-                <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>
-                  Change ({range === 'month' ? 'month' : range === 'year' ? 'year' : 'all time'})
-                </p>
-                <p style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums', color: changeAbs <= 0 ? PALETTE.pull : PALETTE.fg }}>
-                  {changeAbs >= 0 ? '+' : ''}{changeAbs.toFixed(1)} lb
-                </p>
-                <p style={{ fontSize: 11, color: PALETTE.dim, fontVariantNumeric: 'tabular-nums' }}>
-                  {changePct >= 0 ? '+' : ''}{changePct.toFixed(1)}%
-                </p>
-              </div>
-            )}
-            {latest?.bodyFatPct !== null && latest?.bodyFatPct !== undefined && (
-              <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '8px 12px', flex: 1 }}>
-                <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>Body fat</p>
-                <p style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{latest.bodyFatPct}%</p>
-              </div>
-            )}
-          </div>
-
-          {hasBmi && latest?.bmi != null && (
-            <div style={{ marginTop: 8, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '8px 12px' }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <p style={{ fontSize: 10, color: PALETTE.mute }}>BMI</p>
-                <p style={{ fontSize: 18, fontVariantNumeric: 'tabular-nums', color: PALETTE.cardioBorder }}>{latest.bmi}</p>
-              </div>
-              <p style={{ fontSize: 11, color: PALETTE.mute, marginTop: 4, lineHeight: 1.5 }}>
-                BMI does not distinguish muscle from fat and systematically misclassifies muscular individuals. For someone strength training three days a week, body weight trend and body-fat percentage are more informative.
-              </p>
             </div>
-          )}
+          </div>
+
+          {/* Stat cards — raised inside sunken container */}
+          <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {latest && (
+                <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, padding: '8px 12px', flex: 1 }}>
+                  <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>Current weight</p>
+                  <p style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{latest.weightLb} lb</p>
+                </div>
+              )}
+              {changeAbs !== null && changePct !== null && (
+                <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, padding: '8px 12px', flex: 1 }}>
+                  <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>
+                    Change ({range === 'month' ? 'month' : range === 'year' ? 'year' : 'all time'})
+                  </p>
+                  <p style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums', color: changeAbs <= 0 ? PALETTE.pull : PALETTE.fg }}>
+                    {changeAbs >= 0 ? '+' : ''}{changeAbs.toFixed(1)} lb
+                  </p>
+                  <p style={{ fontSize: 11, color: PALETTE.dim, fontVariantNumeric: 'tabular-nums' }}>
+                    {changePct >= 0 ? '+' : ''}{changePct.toFixed(1)}%
+                  </p>
+                </div>
+              )}
+              {latest?.bodyFatPct !== null && latest?.bodyFatPct !== undefined && (
+                <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, padding: '8px 12px', flex: 1 }}>
+                  <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 2 }}>Body fat</p>
+                  <p style={{ fontSize: 16, fontVariantNumeric: 'tabular-nums', color: PALETTE.fg }}>{latest.bodyFatPct}%</p>
+                </div>
+              )}
+            </div>
+
+            {hasBmi && latest?.bmi != null && (
+              <div style={{ marginTop: 8, background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, padding: '8px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <p style={{ fontSize: 10, color: PALETTE.mute }}>BMI</p>
+                  <p style={{ fontSize: 18, fontVariantNumeric: 'tabular-nums', color: PALETTE.cardioBorder }}>{latest.bmi}</p>
+                </div>
+                <p style={{ fontSize: 11, color: PALETTE.mute, marginTop: 4, lineHeight: 1.5 }}>
+                  BMI does not distinguish muscle from fat and systematically misclassifies muscular individuals. For someone strength training three days a week, body weight trend and body-fat percentage are more informative.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
       )}
 
       {/* History list */}
       {historyList.length > 0 && (
         <section>
-          <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 8 }}>Recent measurements</p>
-          <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 12, overflow: 'hidden' }}>
+          <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Recent measurements</p>
+          <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 12, overflow: 'hidden' }}>
             {historyList.map((m, i) => (
               <div
                 key={m.id}
@@ -919,7 +968,7 @@ function MeasurementsSection() {
     <>
       {/* Entry form */}
       <section style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 10 }}>
+        <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
           {editingId ? 'Edit entry' : 'Log measurements'}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1075,9 +1124,9 @@ function MeasurementsSection() {
                 style={{
                   flex: 1, padding: '6px 0', borderRadius: 20, fontSize: 13,
                   fontWeight: range === r ? 500 : 400,
-                  background: range === r ? PALETTE.fg : PALETTE.panel,
+                  background: range === r ? PALETTE.fg : SURFACE.raised,
                   color: range === r ? PALETTE.ink : PALETTE.dim,
-                  border: `1px solid ${range === r ? PALETTE.fg : PALETTE.line}`,
+                  border: `1px solid ${range === r ? PALETTE.fg : BORDER.subtle}`,
                   cursor: 'pointer',
                 }}
               >
@@ -1094,9 +1143,9 @@ function MeasurementsSection() {
                 onClick={() => setChartMetric(o.key)}
                 style={{
                   padding: '4px 10px', borderRadius: 16, fontSize: 12,
-                  background: chartMetric === o.key ? PALETTE.push : PALETTE.panel,
+                  background: chartMetric === o.key ? PALETTE.push : SURFACE.raised,
                   color: chartMetric === o.key ? '#fff' : PALETTE.dim,
-                  border: `1px solid ${chartMetric === o.key ? PALETTE.push : PALETTE.line}`,
+                  border: `1px solid ${chartMetric === o.key ? PALETTE.push : BORDER.subtle}`,
                   cursor: 'pointer',
                 }}
               >
@@ -1110,26 +1159,28 @@ function MeasurementsSection() {
               Log at least two {CHART_OPTIONS.find(o => o.key === chartMetric)?.label.toLowerCase()} entries to see a trend.
             </p>
           ) : (
-            <ResponsiveContainer width="100%" height={180}>
-              <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.line} vertical={false} />
-                <XAxis dataKey="date" tickFormatter={fmtDate} tick={{ fill: PALETTE.mute, fontSize: 10 }} tickLine={false} axisLine={{ stroke: PALETTE.line }} interval="preserveStartEnd" />
-                <YAxis tick={{ fill: PALETTE.mute, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}"`} />
-                <Tooltip
-                  {...tooltipStyle}
-                  labelFormatter={(l: unknown) => typeof l === 'string' ? fmtDate(l) : String(l ?? '')}
-                  formatter={(v: unknown) => [`${v}"`, CHART_OPTIONS.find(o => o.key === chartMetric)?.label ?? '']}
-                />
-                <Line type="monotone" dataKey="value" stroke={PALETTE.pull} strokeWidth={2} dot={{ r: 3, fill: PALETTE.pull, strokeWidth: 0 }} activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
-              </ComposedChart>
-            </ResponsiveContainer>
+            <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: '12px 4px 8px', marginBottom: 12 }}>
+              <ResponsiveContainer width="100%" height={180}>
+                <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={BORDER.subtle} vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={fmtDate} tick={{ fill: PALETTE.mute, fontSize: 10 }} tickLine={false} axisLine={{ stroke: BORDER.subtle }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fill: PALETTE.mute, fontSize: 10 }} tickLine={false} axisLine={false} tickFormatter={(v: number) => `${v}"`} />
+                  <Tooltip
+                    {...tooltipStyle}
+                    labelFormatter={(l: unknown) => typeof l === 'string' ? fmtDate(l) : String(l ?? '')}
+                    formatter={(v: unknown) => [`${v}"`, CHART_OPTIONS.find(o => o.key === chartMetric)?.label ?? '']}
+                  />
+                  <Line type="monotone" dataKey="value" stroke={PALETTE.pull} strokeWidth={2} dot={{ r: 3, fill: PALETTE.pull, strokeWidth: 0 }} activeDot={{ r: 4 }} isAnimationActive={false} connectNulls />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
           )}
 
           {/* Change table */}
           {changeTable && changeTable.length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 6 }}>Change over range</p>
-              <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, overflow: 'hidden' }}>
+              <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Change over range</p>
+              <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, overflow: 'hidden' }}>
                 {changeTable.map((row, i) => (
                   <div
                     key={row.label}
@@ -1138,7 +1189,7 @@ function MeasurementsSection() {
                       gridTemplateColumns: '1fr auto auto',
                       gap: 8,
                       padding: '7px 12px',
-                      borderBottom: i < changeTable.length - 1 ? `1px solid ${PALETTE.line}` : undefined,
+                      borderBottom: i < changeTable.length - 1 ? `1px solid ${BORDER.subtle}` : undefined,
                       alignItems: 'center',
                     }}
                   >
@@ -1164,8 +1215,8 @@ function MeasurementsSection() {
       {/* History */}
       {allMeasurements.length > 0 && (
         <section>
-          <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 8 }}>History</p>
-          <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 12, overflow: 'hidden' }}>
+          <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>History</p>
+          <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 12, overflow: 'hidden' }}>
             {[...allMeasurements].reverse().slice(0, 10).map((m, i, arr) => (
               <div
                 key={m.id}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import type { DbProfile, DbNutritionTarget } from '../../data/db'
 import { getProfile, saveProfile, getActiveNutritionTarget, addNutritionTarget, getAllBodyMetrics } from '../../data/repo'
-import { PALETTE } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER } from '../../ui/tokens'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -312,7 +312,7 @@ export function NutritionGoalsScreen({ onClose, onSaved }: NutritionGoalsScreenP
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', background: PALETTE.ink }}>
       {/* Header */}
-      <div style={{ background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.line}`, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minHeight: 56 }}>
+      <div style={{ background: SURFACE.elevated, borderBottom: `1px solid ${BORDER.subtle}`, paddingTop: 'max(env(safe-area-inset-top), 0px)', paddingLeft: 16, paddingRight: 16, paddingBottom: 0, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minHeight: 56 }}>
         <button onClick={onClose} style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: PALETTE.dim, background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, flexShrink: 0 }} aria-label="Close">
           ←
         </button>

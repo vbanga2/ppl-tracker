@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import type { DbFood } from '../../data/db'
 import { getAllFoods, addFood, updateFood, deleteFood, getMealEntriesForDateRange, getActiveNutritionTarget } from '../../data/repo'
-import { PALETTE } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER } from '../../ui/tokens'
 import { MealDiary } from './MealDiary'
 import { NutritionGoalsScreen } from './NutritionGoalsScreen'
 
@@ -182,7 +182,7 @@ function FoodForm({ mode, onSave, onCancel }: FoodFormProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', background: PALETTE.ink }}>
       {/* Header */}
-      <div style={{ background: PALETTE.panel, borderBottom: `1px solid ${PALETTE.line}`, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minHeight: 56 }}>
+      <div style={{ background: SURFACE.elevated, borderBottom: `1px solid ${BORDER.subtle}`, paddingTop: 'max(env(safe-area-inset-top), 0px)', paddingLeft: 16, paddingRight: 16, paddingBottom: 0, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, minHeight: 56 }}>
         <button
           onClick={onCancel}
           style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', color: PALETTE.dim, background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, flexShrink: 0 }}
@@ -455,7 +455,7 @@ function FoodLibraryView({ foods, onFoodsChanged, onBack }: FoodLibraryViewProps
   return (
     <div style={{ padding: '0 0 16px' }}>
       {/* Header */}
-      <div style={{ padding: '0 16px', display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, borderBottom: `1px solid ${PALETTE.line}` }}>
+      <div style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)', paddingLeft: 16, paddingRight: 16, paddingBottom: 0, display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, borderBottom: `1px solid ${BORDER.subtle}` }}>
         <button
           onClick={onBack}
           style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: PALETTE.dim, cursor: 'pointer', fontSize: 20, flexShrink: 0 }}

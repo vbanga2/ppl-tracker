@@ -10,7 +10,7 @@ import {
   getActiveNutritionTarget,
 } from '../../data/repo'
 import { Stepper } from '../../ui/Stepper'
-import { PALETTE } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER } from '../../ui/tokens'
 import slidersIcon from '../../assets/nav-icons/sliders.png'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -118,9 +118,10 @@ const MONO_INPUT: React.CSSProperties = {
 }
 
 const OVERLAY_HEADER: React.CSSProperties = {
-  background: PALETTE.panel,
-  borderBottom: `1px solid ${PALETTE.line}`,
+  background: SURFACE.elevated,
+  borderBottom: `1px solid ${BORDER.subtle}`,
   padding: '0 16px',
+  paddingTop: 'max(env(safe-area-inset-top), 0px)',
   display: 'flex',
   alignItems: 'center',
   gap: 8,
@@ -187,7 +188,7 @@ function EntryRow({ entry, food, expanded, onToggle, onUpdateServings, onDelete 
   }
 
   return (
-    <div style={{ background: PALETTE.panel, borderRadius: 10, overflow: 'hidden', marginBottom: 6 }}>
+    <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, overflow: 'hidden', marginBottom: 6 }}>
       <button
         onClick={onToggle}
         style={{ width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}
@@ -281,18 +282,25 @@ function SlotSection({
   const hasEntries = entries.length > 0
 
   return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '0 16px', marginBottom: 6 }}>
+    <div style={{ marginBottom: 16, padding: '0 16px' }}>
+      {/* Slot header row */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: 13, fontWeight: 500, color: PALETTE.dim }}>{SLOT_LABELS[slot]}</span>
         {hasEntries && (
           <span style={{ fontSize: 12, color: PALETTE.mute, fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums' }}>
             {r(totals.kcal)} kcal · {r(totals.protein)}g P · {r(totals.carb)}g C · {r(totals.fat)}g F
           </span>
         )}
+        {hasEntries && (
+          <button onClick={() => onCopySlot(slot)} style={{ marginLeft: 'auto', padding: '0 4px', background: 'none', border: 'none', color: PALETTE.mute, fontSize: 12, cursor: 'pointer', minHeight: 32 }}>
+            Copy
+          </button>
+        )}
       </div>
 
+      {/* Entries in a sunken container */}
       {hasEntries && (
-        <div style={{ padding: '0 16px' }}>
+        <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: '6px 8px', marginBottom: 6 }}>
           {entries.map(entry => (
             <EntryRow
               key={entry.id}
@@ -307,18 +315,13 @@ function SlotSection({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, padding: '4px 16px 0' }}>
-        <button onClick={() => onAddFood(slot)} style={{ flex: 1, minHeight: 40, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, color: PALETTE.fg, fontSize: 13, cursor: 'pointer' }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button onClick={() => onAddFood(slot)} style={{ flex: 1, minHeight: 40, background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, color: PALETTE.fg, fontSize: 13, cursor: 'pointer' }}>
           + Add food
         </button>
-        <button onClick={() => onQuickAdd(slot)} style={{ minHeight: 40, padding: '0 12px', background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, color: PALETTE.dim, fontSize: 13, cursor: 'pointer' }}>
+        <button onClick={() => onQuickAdd(slot)} style={{ minHeight: 40, padding: '0 12px', background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, color: PALETTE.dim, fontSize: 13, cursor: 'pointer' }}>
           Quick add
         </button>
-        {hasEntries && (
-          <button onClick={() => onCopySlot(slot)} style={{ minHeight: 40, padding: '0 10px', background: 'none', border: 'none', color: PALETTE.mute, fontSize: 13, cursor: 'pointer' }}>
-            Copy
-          </button>
-        )}
       </div>
     </div>
   )
@@ -328,10 +331,9 @@ function SlotSection({
 
 function DayTotals({ entries }: { entries: DbMealEntry[] }) {
   const totals = useMemo(() => sumMacros(entries), [entries])
-  if (entries.length === 0) return null
 
   return (
-    <div style={{ margin: '0 16px', background: PALETTE.panel, borderRadius: 12, padding: 16 }}>
+    <div style={{ padding: '16px 16px 14px' }}>
       <div style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Day total</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
         {[
@@ -739,31 +741,29 @@ function MacroBars({ entries, target }: MacroBarsProps) {
   ]
 
   return (
-    <div style={{ padding: '0 16px', marginBottom: 4 }}>
-      <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 12, padding: '14px 16px' }}>
-        <p style={{ fontSize: 11, color: PALETTE.mute, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Daily targets</p>
-        {bars.map(({ key, label, consumed: cons, target: tgt, unit }) => {
-          const pct = tgt > 0 ? Math.min(cons / tgt, 1) : 0
-          const remaining = tgt - cons
-          const over = cons > tgt
-          return (
-            <div key={key} style={{ marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-                <span style={{ fontSize: 12, color: PALETTE.dim }}>{label}</span>
-                <span style={{ fontSize: 11, color: PALETTE.mute, fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums' }}>
-                  {cons} / {tgt} {unit}{' '}
-                  <span style={{ color: over ? '#f5c518' : PALETTE.mute }}>
-                    ({over ? '+' : ''}{remaining} {over ? 'over' : 'left'})
-                  </span>
+    <div style={{ padding: '14px 16px 14px' }}>
+      <p style={{ fontSize: 11, color: PALETTE.mute, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Daily targets</p>
+      {bars.map(({ key, label, consumed: cons, target: tgt, unit }) => {
+        const pct = tgt > 0 ? Math.min(cons / tgt, 1) : 0
+        const remaining = tgt - cons
+        const over = cons > tgt
+        return (
+          <div key={key} style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: PALETTE.dim }}>{label}</span>
+              <span style={{ fontSize: 11, color: PALETTE.mute, fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums' }}>
+                {cons} / {tgt} {unit}{' '}
+                <span style={{ color: over ? '#f5c518' : PALETTE.mute }}>
+                  ({over ? '+' : ''}{remaining} {over ? 'over' : 'left'})
                 </span>
-              </div>
-              <div style={{ height: 6, background: PALETTE.line, borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${pct * 100}%`, background: MACRO_COLORS[key], borderRadius: 3, transition: 'width 200ms' }} />
-              </div>
+              </span>
             </div>
-          )
-        })}
-      </div>
+            <div style={{ height: 6, background: BORDER.subtle, borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct * 100}%`, background: MACRO_COLORS[key], borderRadius: 3, transition: 'width 200ms' }} />
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -812,20 +812,20 @@ function MicroPanel({ entries, foodMap }: MicroPanelProps) {
     <div style={{ padding: '0 16px', marginBottom: 4 }}>
       <button
         onClick={() => setOpen(v => !v)}
-        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: open ? '10px 10px 0 0' : 10, padding: '10px 14px', cursor: 'pointer', color: PALETTE.mute, fontSize: 13 }}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: open ? '10px 10px 0 0' : 10, padding: '10px 14px', cursor: 'pointer', color: PALETTE.mute, fontSize: 13 }}
       >
         <span>Micronutrients</span>
         <span style={{ fontSize: 11, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }}>▼</span>
       </button>
       {open && (
-        <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '8px 0' }}>
+        <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '8px 0' }}>
           {!hasAnyData && (
             <p style={{ fontSize: 12, color: PALETTE.mute, textAlign: 'center', padding: '12px 16px', lineHeight: 1.5 }}>
               Insufficient data — logged foods don't carry micronutrient information. This reflects a gap in the food database, not a deficiency.
             </p>
           )}
           {rows.map(({ label, value }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', borderBottom: `1px solid ${PALETTE.line}` }}>
+            <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', borderBottom: `1px solid ${BORDER.subtle}` }}>
               <span style={{ fontSize: 13, color: PALETTE.dim }}>{label}</span>
               <span style={{ fontSize: 13, color: value ? PALETTE.fg : PALETTE.mute, fontFamily: 'ui-monospace, monospace', fontVariantNumeric: 'tabular-nums' }}>
                 {value ?? 'insufficient data'}
@@ -1041,7 +1041,7 @@ export function MealDiary({ foods, onOpenLibrary, onOpenGoals }: MealDiaryProps)
   return (
     <div style={{ paddingBottom: 32 }}>
       {/* Header */}
-      <div style={{ padding: '16px 16px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ paddingTop: 'max(env(safe-area-inset-top), 16px)', paddingLeft: 16, paddingRight: 16, paddingBottom: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
         <h1 style={{ flex: 1, fontSize: 22, fontWeight: 500, color: PALETTE.fg, margin: 0 }}>Nutrition</h1>
         <button onClick={onOpenLibrary} style={{ minHeight: 36, padding: '0 14px', background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, color: PALETTE.dim, fontSize: 13, cursor: 'pointer' }}>
           Library
@@ -1085,24 +1085,42 @@ export function MealDiary({ foods, onOpenLibrary, onOpenGoals }: MealDiaryProps)
         )}
       </div>
 
-      {/* Day totals */}
-      {entries.length > 0 && <DayTotals entries={entries} />}
-
-      {/* Macro bars */}
-      {nutritionTarget && <MacroBars entries={entries} target={nutritionTarget} />}
-      {!nutritionTarget && (
-        <div style={{ padding: '0 16px', marginBottom: 4 }}>
-          <button onClick={onOpenGoals} style={{ width: '100%', minHeight: 44, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, color: PALETTE.mute, fontSize: 13, cursor: 'pointer' }}>
+      {/* Summary panel: Day total + Daily targets joined in one elevated block */}
+      {(entries.length > 0 || nutritionTarget) ? (
+        <div style={{ margin: '0 16px', marginBottom: 8, background: SURFACE.elevated, border: `1px solid ${BORDER.strong}`, borderRadius: 12, overflow: 'hidden' }}>
+          {entries.length > 0 && <DayTotals entries={entries} />}
+          {entries.length > 0 && nutritionTarget && (
+            <div style={{ height: 1, background: BORDER.subtle, margin: '0 16px' }} />
+          )}
+          {nutritionTarget ? (
+            <MacroBars entries={entries} target={nutritionTarget} />
+          ) : (
+            <button onClick={onOpenGoals} style={{ width: '100%', minHeight: 44, background: 'none', border: 'none', color: PALETTE.mute, fontSize: 13, cursor: 'pointer', padding: '12px 16px', textAlign: 'left' }}>
+              Set nutrition goals to see macro targets →
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{ padding: '0 16px', marginBottom: 8 }}>
+          <button onClick={onOpenGoals} style={{ width: '100%', minHeight: 44, background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, color: PALETTE.mute, fontSize: 13, cursor: 'pointer' }}>
             Set nutrition goals to see macro targets →
           </button>
         </div>
       )}
 
-      {/* Micronutrient panel */}
+      {/* Micronutrients — collapsed row, surface.raised */}
       {entries.length > 0 && <MicroPanel entries={entries} foodMap={foodMap} />}
 
+      {/* DIARY section divider */}
+      <div style={{ marginTop: 24, padding: '0 16px' }}>
+        <div style={{ height: 1, background: BORDER.strong }} />
+      </div>
+      <div style={{ padding: '8px 16px 8px' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Diary</span>
+      </div>
+
       {/* Meal slots */}
-      <div style={{ marginTop: 16 }}>
+      <div>
         {SLOTS.map(slot => (
           <SlotSection
             key={slot}

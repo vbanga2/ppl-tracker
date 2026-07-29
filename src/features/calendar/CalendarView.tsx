@@ -16,7 +16,7 @@ import { computePRDates, computeExercisePRHistory } from '../../domain/records'
 import type { SetWithMeta } from '../../domain/records'
 import { ExerciseList } from '../workout/ExerciseList'
 import { CardioLogger } from '../workout/CardioLogger'
-import { PALETTE, dayAccent } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER, dayAccent } from '../../ui/tokens'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -658,8 +658,8 @@ export function CalendarView({ onClose, onSessionChanged, initialDate }: Calenda
         <>
           {/* Header */}
           <div
-            className="flex items-center justify-between px-4 py-4 border-b"
-            style={{ borderColor: PALETTE.line }}
+            className="flex items-center justify-between px-4 border-b"
+            style={{ borderColor: BORDER.subtle, paddingTop: 'max(env(safe-area-inset-top), 16px)', paddingBottom: 16, background: SURFACE.elevated }}
           >
             <h1 className="text-base font-medium" style={{ color: PALETTE.fg }}>
               Training calendar

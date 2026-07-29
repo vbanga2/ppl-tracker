@@ -44,6 +44,22 @@ export function dayAccent(day: Day): string {
   return PALETTE[day]
 }
 
+// ─── Elevation tokens ─────────────────────────────────────────────────────────
+// Three-level surface scale. Rule: never place a raised card on a raised surface —
+// nest raised inside sunken, or elevated inside base.
+
+export const SURFACE = {
+  base: '#0b0d10',      // page background
+  raised: '#14181d',    // standard cards — food entries, exercise rows, stat cards
+  elevated: '#1b212a',  // emphasised panels — day totals, daily targets
+  sunken: '#08090b',    // inset wells — chart backgrounds, grouped list containers
+} as const
+
+export const BORDER = {
+  subtle: '#232a32',    // default hairline (same as PALETTE.line)
+  strong: '#39424e',    // section boundaries
+} as const
+
 export function blockColors(label: string): {
   border: string
   pillBg: string

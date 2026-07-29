@@ -22,7 +22,7 @@ import {
 import { epley1RM, effectiveLoad } from '../../domain/metrics'
 import { computeExercisePRHistory } from '../../domain/records'
 import type { SetWithMeta } from '../../domain/records'
-import { PALETTE, dayAccent } from '../../ui/tokens'
+import { PALETTE, SURFACE, BORDER, dayAccent } from '../../ui/tokens'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,12 +69,21 @@ function rangeStart(range: Range): string | null {
 
 function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) {
   return (
-    <div style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 8, padding: '10px 8px', textAlign: 'center' }}>
+    <div style={{ background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 8, padding: '10px 8px', textAlign: 'center' }}>
       <p style={{ fontSize: 10, color: PALETTE.mute, marginBottom: 4, lineHeight: 1.2 }}>{label}</p>
       <p style={{ fontSize: 15, fontWeight: 500, fontVariantNumeric: 'tabular-nums', color: accent, lineHeight: 1.2 }}>{value}</p>
       {sub && <p style={{ fontSize: 11, color: PALETTE.dim, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{sub}</p>}
     </div>
   )
+}
+
+function fmtVolume(v: number): string {
+  if (v === 0) return '0'
+  if (v >= 10000) {
+    const k = v / 1000
+    return k % 1 === 0 ? `${k}k` : `${k.toFixed(1)}k`
+  }
+  return v.toLocaleString()
 }
 
 // ─── Streak computation ───────────────────────────────────────────────────────
@@ -570,21 +579,23 @@ function Heatmap({ sessions, cardioLogs, onOpenDate }: HeatmapProps) {
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginTop: 12 }}>
-        <StatCard label={`Days ${statsYear} (${pct}%)`} value={String(uniqueTrainingDays)} accent={PALETTE.dim} />
-        <StatCard label="Sessions / week" value={sessionsPerWeek} accent={PALETTE.dim} />
-        <StatCard
-          label="Current streak"
-          value={`${dailyStreak.current} days`}
-          sub={`${weeklyStreak.current} wks on prog`}
-          accent={PALETTE.dim}
-        />
-        <StatCard
-          label="Longest streak"
-          value={`${dailyStreak.longest} days`}
-          sub={`${weeklyStreak.longest} wks best`}
-          accent={PALETTE.dim}
-        />
+      <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: 8, marginTop: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+          <StatCard label={`Days ${statsYear} (${pct}%)`} value={String(uniqueTrainingDays)} accent={PALETTE.dim} />
+          <StatCard label="Sessions / week" value={sessionsPerWeek} accent={PALETTE.dim} />
+          <StatCard
+            label="Current streak"
+            value={`${dailyStreak.current} days`}
+            sub={`${weeklyStreak.current} wks on prog`}
+            accent={PALETTE.dim}
+          />
+          <StatCard
+            label="Longest streak"
+            value={`${dailyStreak.longest} days`}
+            sub={`${weeklyStreak.longest} wks best`}
+            accent={PALETTE.dim}
+          />
+        </div>
       </div>
     </div>
   )
@@ -825,207 +836,225 @@ export function ProgressPage({ onOpenDate }: ProgressPageProps = {}) {
       .map(([date, pr]) => ({ date, e1rm: Math.round(pr.bestE1RM * 10) / 10 }))
   }, [prHistory, chartData, start])
 
+  const isSingleSession = stats !== null && stats.sessionsInRange === 1
+
   return (
-    <div style={{ padding: '24px 16px 16px', color: PALETTE.fg }}>
-      <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 20 }}>Progress</h1>
+    <div style={{ paddingTop: 'max(env(safe-area-inset-top), 24px)', paddingBottom: 16, color: PALETTE.fg }}>
+      <div style={{ padding: '0 16px 16px' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 20 }}>Progress</h1>
 
-      {/* Exercise selector */}
-      <section style={{ marginBottom: 20 }}>
-        <label style={{ fontSize: 12, color: PALETTE.dim, display: 'block', marginBottom: 6 }}>
-          Exercise
-        </label>
-        <select
-          value={selectedId}
-          onChange={e => handleSelectExercise(e.target.value)}
-          style={{ width: '100%', background: PALETTE.panel, color: PALETTE.fg, border: `1px solid ${PALETTE.line}`, borderRadius: 6, padding: '10px 12px', fontSize: 15, outline: 'none' }}
-        >
-          <option value="">Choose an exercise…</option>
-          {pushEx.length > 0 && (
-            <optgroup label="Push">
-              {pushEx.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </optgroup>
-          )}
-          {pullEx.length > 0 && (
-            <optgroup label="Pull">
-              {pullEx.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </optgroup>
-          )}
-          {legsEx.length > 0 && (
-            <optgroup label="Legs">
-              {legsEx.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-            </optgroup>
-          )}
-        </select>
-      </section>
-
-      {/* Time range */}
-      {selectedExercise && (
-        <section style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-          {(['month', 'year', 'all'] as Range[]).map(r => (
-            <button
-              key={r}
-              onClick={() => setRange(r)}
-              style={{
-                flex: 1,
-                padding: '6px 0',
-                borderRadius: 20,
-                fontSize: 13,
-                fontWeight: range === r ? 500 : 400,
-                background: range === r ? accent : PALETTE.panel,
-                color: range === r ? '#fff' : PALETTE.dim,
-                border: `1px solid ${range === r ? accent : PALETTE.line}`,
-                cursor: 'pointer',
-              }}
-            >
-              {r === 'month' ? 'This month' : r === 'year' ? 'This year' : 'All time'}
-            </button>
-          ))}
-        </section>
-      )}
-
-      {/* Empty state */}
-      {selectedExercise && filteredSets.length === 0 && (
-        <p style={{ color: PALETTE.mute, fontSize: 14, textAlign: 'center', padding: '32px 0' }}>
-          {exerciseSets.length === 0
-            ? 'Log your first set to see progress.'
-            : 'No sessions in this range.'}
-        </p>
-      )}
-
-      {/* Chart + Stats (chart FIRST, stats below) */}
-      {selectedExercise && chartData.length > 0 && stats && (
-        <>
-          {/* Dual-axis chart */}
-          <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 4 }}>
-            Estimated 1RM &amp; {stats.volumeLabel}
-          </p>
-          <div style={{ marginBottom: 20 }}>
-            <ResponsiveContainer width="100%" height={220}>
-              <ComposedChart data={chartData} margin={{ top: 8, right: 40, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={PALETTE.line} vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={fmtDate}
-                  tick={{ fill: PALETTE.mute, fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={{ stroke: PALETTE.line }}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  yAxisId="e1rm"
-                  domain={e1rmDomain}
-                  tick={{ fill: PALETTE.mute, fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  yAxisId="vol"
-                  orientation="right"
-                  domain={volumeDomain}
-                  tick={{ fill: PALETTE.mute, fontSize: 10 }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={v => `${Math.round((v as number) / 1000)}k`}
-                />
-                <Tooltip
-                  {...tooltipStyle}
-                  labelFormatter={(label: unknown) =>
-                    typeof label === 'string' ? fmtDate(label) : String(label ?? '')
-                  }
-                  formatter={(v: unknown, name: unknown) => {
-                    if (name === 'e1rm') return [`${(v as number).toFixed(1)} lb`, 'e1RM']
-                    if (name === 'runningBest') return [`${(v as number).toFixed(1)} lb`, 'Best e1RM']
-                    return [`${(v as number).toLocaleString()} lb`, 'Volume']
-                  }}
-                />
-                <Bar
-                  yAxisId="vol"
-                  dataKey="volume"
-                  fill={PALETTE.mute}
-                  opacity={0.4}
-                  radius={[2, 2, 0, 0]}
-                  isAnimationActive={false}
-                />
-                {firstE1rmInRange !== undefined && (
-                  <ReferenceLine
-                    yAxisId="e1rm"
-                    y={firstE1rmInRange}
-                    stroke={PALETTE.mute}
-                    strokeDasharray="4 2"
-                    opacity={0.5}
-                  />
+        {/* Exercise selector + range control — one control bar */}
+        <section style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, color: PALETTE.mute, display: 'block', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 500 }}>
+                Exercise
+              </label>
+              <select
+                value={selectedId}
+                onChange={e => handleSelectExercise(e.target.value)}
+                style={{ width: '100%', background: SURFACE.raised, color: PALETTE.fg, border: `1px solid ${BORDER.subtle}`, borderRadius: 6, padding: '10px 12px', fontSize: 15, outline: 'none' }}
+              >
+                <option value="">Choose an exercise…</option>
+                {pushEx.length > 0 && (
+                  <optgroup label="Push">
+                    {pushEx.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </optgroup>
                 )}
-                <Line
-                  yAxisId="e1rm"
-                  type="monotone"
-                  dataKey="runningBest"
-                  stroke={accent}
-                  strokeWidth={1.5}
-                  strokeDasharray="5 3"
-                  opacity={0.5}
-                  dot={false}
-                  activeDot={false}
-                  isAnimationActive={false}
-                  connectNulls
-                />
-                <Line
-                  yAxisId="e1rm"
-                  type="monotone"
-                  dataKey="e1rm"
-                  stroke={accent}
-                  strokeWidth={2}
-                  dot={{ r: chartData.length === 1 ? 5 : 3, fill: accent, strokeWidth: 0 }}
-                  activeDot={{ r: 5 }}
-                  isAnimationActive={false}
-                  connectNulls
-                />
-                {prDots.map(({ date, e1rm }) => (
-                  <ReferenceDot
-                    key={date}
-                    yAxisId="e1rm"
-                    x={date}
-                    y={e1rm}
-                    r={5}
-                    fill={PALETTE.pr}
-                    stroke={PALETTE.panel}
-                    strokeWidth={2}
+                {pullEx.length > 0 && (
+                  <optgroup label="Pull">
+                    {pullEx.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </optgroup>
+                )}
+                {legsEx.length > 0 && (
+                  <optgroup label="Legs">
+                    {legsEx.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+          </div>
+
+          {selectedExercise && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+              {(['month', 'year', 'all'] as Range[]).map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRange(r)}
+                  style={{
+                    flex: 1,
+                    padding: '6px 0',
+                    borderRadius: 20,
+                    fontSize: 13,
+                    fontWeight: range === r ? 500 : 400,
+                    background: range === r ? accent : SURFACE.raised,
+                    color: range === r ? '#fff' : PALETTE.dim,
+                    border: `1px solid ${range === r ? accent : BORDER.subtle}`,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {r === 'month' ? 'This month' : r === 'year' ? 'This year' : 'All time'}
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Empty state */}
+        {selectedExercise && filteredSets.length === 0 && (
+          <p style={{ color: PALETTE.mute, fontSize: 14, textAlign: 'center', padding: '32px 0' }}>
+            {exerciseSets.length === 0
+              ? 'Log your first set to see progress.'
+              : 'No sessions in this range.'}
+          </p>
+        )}
+
+        {/* Chart section */}
+        {selectedExercise && chartData.length > 0 && stats && (
+          <>
+            {/* Section header */}
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8, marginTop: 8 }}>
+              <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Estimated 1RM &amp; {stats.volumeLabel}
+              </p>
+              {isSingleSession && (
+                <span style={{ fontSize: 11, color: PALETTE.mute }}>1 session</span>
+              )}
+            </div>
+
+            {/* Chart in sunken well */}
+            <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: '12px 4px 8px', marginBottom: 16 }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={chartData} margin={{ top: 8, right: 40, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={BORDER.subtle} vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={fmtDate}
+                    tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={{ stroke: BORDER.subtle }}
+                    interval="preserveStartEnd"
+                    padding={isSingleSession ? { left: 60, right: 60 } : { left: 0, right: 0 }}
                   />
-                ))}
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
+                  <YAxis
+                    yAxisId="e1rm"
+                    domain={e1rmDomain}
+                    tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    yAxisId="vol"
+                    orientation="right"
+                    domain={volumeDomain}
+                    tick={{ fill: PALETTE.mute, fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v: number) => fmtVolume(v)}
+                    tickCount={5}
+                  />
+                  <Tooltip
+                    {...tooltipStyle}
+                    labelFormatter={(label: unknown) =>
+                      typeof label === 'string' ? fmtDate(label) : String(label ?? '')
+                    }
+                    formatter={(v: unknown, name: unknown) => {
+                      if (name === 'e1rm') return [`${(v as number).toFixed(1)} lb`, 'e1RM']
+                      if (name === 'runningBest') return [`${(v as number).toFixed(1)} lb`, 'Best e1RM']
+                      return [`${(v as number).toLocaleString()} lb`, 'Volume']
+                    }}
+                  />
+                  <Bar
+                    yAxisId="vol"
+                    dataKey="volume"
+                    fill={PALETTE.mute}
+                    opacity={0.4}
+                    radius={[2, 2, 0, 0]}
+                    isAnimationActive={false}
+                  />
+                  {firstE1rmInRange !== undefined && (
+                    <ReferenceLine
+                      yAxisId="e1rm"
+                      y={firstE1rmInRange}
+                      stroke={PALETTE.mute}
+                      strokeDasharray="4 2"
+                      opacity={0.5}
+                    />
+                  )}
+                  <Line
+                    yAxisId="e1rm"
+                    type="monotone"
+                    dataKey="runningBest"
+                    stroke={accent}
+                    strokeWidth={1.5}
+                    strokeDasharray="5 3"
+                    opacity={0.5}
+                    dot={false}
+                    activeDot={false}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                  <Line
+                    yAxisId="e1rm"
+                    type="monotone"
+                    dataKey="e1rm"
+                    stroke={accent}
+                    strokeWidth={2}
+                    dot={{ r: isSingleSession ? 6 : 3, fill: accent, strokeWidth: 0 }}
+                    activeDot={{ r: 5 }}
+                    isAnimationActive={false}
+                    connectNulls
+                  />
+                  {prDots.map(({ date, e1rm }) => (
+                    <ReferenceDot
+                      key={date}
+                      yAxisId="e1rm"
+                      x={date}
+                      y={e1rm}
+                      r={5}
+                      fill={PALETTE.pr}
+                      stroke={SURFACE.sunken}
+                      strokeWidth={2}
+                    />
+                  ))}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
 
-          {/* Summary stats below chart */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 8 }}>
-            <StatCard label="Current e1RM" value={`${stats.currentE1RM.toFixed(1)} lb`} accent={accent} />
-            <StatCard
-              label={`Change (${range === 'month' ? 'month' : range === 'year' ? 'year' : 'all time'})`}
-              value={`${stats.changeAbs >= 0 ? '+' : ''}${stats.changeAbs.toFixed(1)} lb`}
-              sub={`${stats.changePct >= 0 ? '+' : ''}${stats.changePct.toFixed(1)}%`}
-              accent={stats.changeAbs >= 0 ? accent : PALETTE.mute}
-            />
-            <StatCard label="All-time best e1RM" value={`${stats.allTimeBest.toFixed(1)} lb`} accent={PALETTE.pr} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 24 }}>
-            <StatCard
-              label="Top set"
-              value={`${stats.topSetWeight} lb × ${stats.topSetReps}`}
-              accent={accent}
-            />
-            <StatCard label="Sessions in range" value={String(stats.sessionsInRange)} accent={PALETTE.dim} />
-          </div>
-        </>
-      )}
+            {/* Summary stats — raised cards in a sunken container */}
+            <div style={{ background: SURFACE.sunken, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, padding: 10, marginBottom: 24 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6 }}>
+                <StatCard label="Current e1RM" value={`${stats.currentE1RM.toFixed(1)} lb`} accent={accent} />
+                <StatCard
+                  label={`Change (${range === 'month' ? 'month' : range === 'year' ? 'year' : 'all time'})`}
+                  value={`${stats.changeAbs >= 0 ? '+' : ''}${stats.changeAbs.toFixed(1)} lb`}
+                  sub={`${stats.changePct >= 0 ? '+' : ''}${stats.changePct.toFixed(1)}%`}
+                  accent={stats.changeAbs >= 0 ? accent : PALETTE.mute}
+                />
+                <StatCard label="All-time best e1RM" value={`${stats.allTimeBest.toFixed(1)} lb`} accent={PALETTE.pr} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <StatCard
+                  label="Top set"
+                  value={`${stats.topSetWeight} lb × ${stats.topSetReps}`}
+                  accent={accent}
+                />
+                <StatCard label="Sessions in range" value={String(stats.sessionsInRange)} accent={PALETTE.dim} />
+              </div>
+            </div>
+          </>
+        )}
 
-      {/* Training history heatmap — always shown */}
-      <section style={{ marginTop: selectedExercise && chartData.length > 0 ? 8 : 0 }}>
-        <p style={{ fontSize: 12, color: PALETTE.dim, marginBottom: 8 }}>Training history</p>
-        <Heatmap
-          sessions={sessions}
-          cardioLogs={cardioLogs}
-          onOpenDate={onOpenDate}
-        />
-      </section>
+        {/* Training history — clearly headed section */}
+        <div style={{ marginTop: 8, borderTop: selectedExercise && chartData.length > 0 ? `1px solid ${BORDER.strong}` : undefined, paddingTop: selectedExercise && chartData.length > 0 ? 24 : 0 }}>
+          <p style={{ fontSize: 11, fontWeight: 500, color: PALETTE.mute, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Training history</p>
+          <Heatmap
+            sessions={sessions}
+            cardioLogs={cardioLogs}
+            onOpenDate={onOpenDate}
+          />
+        </div>
+      </div>
     </div>
   )
 }
