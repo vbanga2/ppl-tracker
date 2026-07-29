@@ -229,6 +229,19 @@ export interface DbProgressPhoto {
   deletedAt: number | null
 }
 
+export interface DbHealthWorkout {
+  id: string
+  workoutType: string
+  startAt: number
+  endAt: number
+  durationMin: number
+  distanceMi: number | null
+  kcal: number | null
+  source: string
+  updatedAt: number
+  deletedAt: number | null
+}
+
 class PPLDatabase extends Dexie {
   meta!: EntityTable<DbMeta, 'key'>
   exercises!: EntityTable<DbExercise, 'id'>
@@ -247,6 +260,7 @@ class PPLDatabase extends Dexie {
   progressPhotos!: EntityTable<DbProgressPhoto, 'id'>
   nutritionTargets!: EntityTable<DbNutritionTarget, 'id'>
   profile!: EntityTable<DbProfile, 'key'>
+  healthWorkouts!: EntityTable<DbHealthWorkout, 'id'>
 
   constructor() {
     super('ppl-tracker')
@@ -330,6 +344,11 @@ class PPLDatabase extends Dexie {
     // Version 11: profile table for height, sex, age, TDEE goal settings
     this.version(11).stores({
       profile: 'key',
+    })
+    // Version 12: healthWorkouts table; compound index on healthSamples for idempotency
+    this.version(12).stores({
+      healthSamples: 'id, type, startAt, [type+startAt+source], deletedAt',
+      healthWorkouts: 'id, startAt, [workoutType+startAt+source], deletedAt',
     })
   }
 }

@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbFood, DbMealEntry, DbNutritionTarget, DbProfile, DbProgressPhoto, DbSession, DbSetLog } from './db'
+import type { DbBlock, DbBodyMeasurement, DbBodyMetric, DbCardioLog, DbExercise, DbExerciseNote, DbFood, DbHealthSample, DbHealthWorkout, DbMealEntry, DbNutritionTarget, DbProfile, DbProgressPhoto, DbSession, DbSetLog } from './db'
 import type { RepSpec, LoadSpec } from '../domain/plan'
 import { SEED_BLOCKS, SEED_EXERCISES } from '../domain/plan'
 
@@ -592,6 +592,130 @@ export async function getAllSessionsOrdered(): Promise<DbSession[]> {
   return db.sessions.orderBy('date').filter(s => s.deletedAt === null).toArray()
 }
 
+// ─── Health Samples ───────────────────────────────────────────────────────────
+
+export async function getAllHealthSamples(): Promise<DbHealthSample[]> {
+  return db.healthSamples.filter(s => s.deletedAt === null).toArray()
+}
+
+export async function getHealthSamplesOfType(type: string): Promise<DbHealthSample[]> {
+  return db.healthSamples
+    .where('type').equals(type)
+    .filter(s => s.deletedAt === null)
+    .sortBy('startAt')
+}
+
+export async function getHealthSampleCount(): Promise<number> {
+  return db.healthSamples.filter(s => s.deletedAt === null).count()
+}
+
+export async function getHealthWorkoutCount(): Promise<number> {
+  return db.healthWorkouts.filter(w => w.deletedAt === null).count()
+}
+
+export async function getAllHealthWorkouts(): Promise<DbHealthWorkout[]> {
+  return db.healthWorkouts
+    .filter(w => w.deletedAt === null)
+    .sortBy('startAt')
+}
+
+/** Batch upsert health samples. Keyed on type+startAt+source — re-import replaces, not appends. */
+export async function upsertHealthSamples(
+  samples: Omit<DbHealthSample, 'id' | 'updatedAt' | 'deletedAt'>[],
+): Promise<void> {
+  if (samples.length === 0) return
+  const ts = now()
+
+  const existing = await db.healthSamples.filter(s => s.deletedAt === null).toArray()
+  const existingMap = new Map(existing.map(s => [`${s.type}|${s.startAt}|${s.source}`, s]))
+
+  await db.transaction('rw', db.healthSamples, async () => {
+    for (const sample of samples) {
+      const key = `${sample.type}|${sample.startAt}|${sample.source}`
+      const hit = existingMap.get(key)
+      if (hit) {
+        await db.healthSamples.update(hit.id, { value: sample.value, endAt: sample.endAt, updatedAt: ts })
+      } else {
+        await db.healthSamples.add({ id: crypto.randomUUID(), ...sample, updatedAt: ts, deletedAt: null })
+      }
+    }
+  })
+}
+
+/** Batch upsert health workouts. Keyed on workoutType+startAt+source. */
+export async function upsertHealthWorkouts(
+  workouts: Omit<DbHealthWorkout, 'id' | 'updatedAt' | 'deletedAt'>[],
+): Promise<void> {
+  if (workouts.length === 0) return
+  const ts = now()
+
+  const existing = await db.healthWorkouts.filter(w => w.deletedAt === null).toArray()
+  const existingMap = new Map(existing.map(w => [`${w.workoutType}|${w.startAt}|${w.source}`, w]))
+
+  await db.transaction('rw', db.healthWorkouts, async () => {
+    for (const wkt of workouts) {
+      const key = `${wkt.workoutType}|${wkt.startAt}|${wkt.source}`
+      const hit = existingMap.get(key)
+      if (hit) {
+        await db.healthWorkouts.update(hit.id, { durationMin: wkt.durationMin, distanceMi: wkt.distanceMi, kcal: wkt.kcal, endAt: wkt.endAt, updatedAt: ts })
+      } else {
+        await db.healthWorkouts.add({ id: crypto.randomUUID(), ...wkt, updatedAt: ts, deletedAt: null })
+      }
+    }
+  })
+}
+
+/**
+ * Batch upsert body metrics from Apple Health.
+ * Manual entries are never overwritten — health wins only when no manual entry exists for that date.
+ */
+export async function upsertHealthBodyMetrics(
+  metrics: Array<{ date: string; weightLb: number | null; bodyFatPct: number | null; source: string }>,
+): Promise<void> {
+  if (metrics.length === 0) return
+  const ts = now()
+
+  const allMetrics = await db.bodyMetrics.filter(m => m.deletedAt === null).toArray()
+  const manualByDate = new Map(allMetrics.filter(m => m.source === 'manual').map(m => [m.date, m]))
+  const healthByDate = new Map(allMetrics.filter(m => m.source === 'health').map(m => [m.date, m]))
+
+  await db.transaction('rw', db.bodyMetrics, async () => {
+    for (const metric of metrics) {
+      if (manualByDate.has(metric.date)) continue // manual wins
+      if (metric.weightLb === null && metric.bodyFatPct === null) continue
+
+      const existing = healthByDate.get(metric.date)
+      if (existing) {
+        await db.bodyMetrics.update(existing.id, {
+          weightLb: metric.weightLb ?? existing.weightLb,
+          bodyFatPct: metric.bodyFatPct ?? existing.bodyFatPct,
+          updatedAt: ts,
+        })
+      } else {
+        await db.bodyMetrics.add({
+          id: crypto.randomUUID(),
+          date: metric.date,
+          weightLb: metric.weightLb ?? 0,
+          bodyFatPct: metric.bodyFatPct ?? null,
+          source: 'health',
+          updatedAt: ts,
+          deletedAt: null,
+        })
+      }
+    }
+  })
+}
+
+/** Clear all health-sourced data (samples, workouts, health body metrics). */
+export async function clearAllHealthData(): Promise<void> {
+  const ts = now()
+  await db.transaction('rw', db.healthSamples, db.healthWorkouts, db.bodyMetrics, async () => {
+    await db.healthSamples.filter(s => s.deletedAt === null).modify({ deletedAt: ts, updatedAt: ts })
+    await db.healthWorkouts.filter(w => w.deletedAt === null).modify({ deletedAt: ts, updatedAt: ts })
+    await db.bodyMetrics.filter(m => m.deletedAt === null && m.source === 'health').modify({ deletedAt: ts, updatedAt: ts })
+  })
+}
+
 /** All non-deleted cardio logs. */
 export async function getAllCardioLogs(): Promise<DbCardioLog[]> {
   return db.cardioLogs.filter(c => c.deletedAt === null).toArray()
@@ -681,16 +805,18 @@ export async function loadCalendarData(): Promise<{
   blocks: DbBlock[]
   bodyMetrics: DbBodyMetric[]
   cardioLogs: DbCardioLog[]
+  healthSamples: DbHealthSample[]
 }> {
-  const [sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs] = await Promise.all([
+  const [sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs, healthSamples] = await Promise.all([
     db.sessions.filter(s => s.deletedAt === null).toArray(),
     db.setLogs.filter(s => s.deletedAt === null).toArray(),
     db.exercises.toArray(),
     db.blocks.toArray(),
     db.bodyMetrics.orderBy('date').filter(m => m.deletedAt === null).toArray(),
     db.cardioLogs.filter(c => c.deletedAt === null).toArray(),
+    db.healthSamples.filter(s => s.deletedAt === null).toArray(),
   ])
-  return { sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs }
+  return { sessions, setLogs, exercises, blocks, bodyMetrics, cardioLogs, healthSamples }
 }
 
 // ─── Body Measurements ────────────────────────────────────────────────────────

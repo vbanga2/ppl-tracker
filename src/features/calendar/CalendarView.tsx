@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import type { DbSession, DbSetLog, DbExercise, DbBlock, DbBodyMetric, DbCardioLog } from '../../data/db'
+import type { DbSession, DbSetLog, DbExercise, DbBlock, DbBodyMetric, DbCardioLog, DbHealthSample } from '../../data/db'
 import {
   loadCalendarData,
   createSessionForDate,
@@ -66,6 +66,7 @@ interface CalendarRawData {
   blocks: DbBlock[]
   bodyMetrics: DbBodyMetric[]
   cardioLogs: DbCardioLog[]
+  healthSamples: DbHealthSample[]
   prDates: Set<string>
   enrichedSets: SetWithMeta[]
 }
@@ -86,6 +87,8 @@ interface DayData {
   sessionExerciseSets: Map<string, { exercise: DbExercise; sets: DbSetLog[]; prText: string | null }[]>
   bodyMetric: DbBodyMetric | undefined
   hasPR: boolean
+  stepsCount: number | null
+  sleepMin: number | null
 }
 
 // ─── Props ───────────────────────────────────────────────────────────────────
@@ -184,6 +187,15 @@ function deriveDayData(dateStr: string, data: CalendarRawData): DayData {
 
   const bodyMetric = data.bodyMetrics.find(m => m.date === dateStr)
 
+  // Health samples: find daily aggregated records for this date
+  const dateStartAt = new Date(dateStr + 'T00:00:00').getTime()
+  const stepsRow = data.healthSamples.find(
+    s => s.type === 'HKQuantityTypeIdentifierStepCount' && s.startAt === dateStartAt,
+  )
+  const sleepRow = data.healthSamples.find(
+    s => s.type === 'HKCategoryTypeIdentifierSleepAnalysis' && s.startAt === dateStartAt,
+  )
+
   return {
     date: dateStr,
     sessions,
@@ -192,6 +204,8 @@ function deriveDayData(dateStr: string, data: CalendarRawData): DayData {
     sessionExerciseSets,
     bodyMetric,
     hasPR: data.prDates.has(dateStr),
+    stepsCount: stepsRow?.value ?? null,
+    sleepMin: sleepRow?.value ?? null,
   }
 }
 
@@ -415,15 +429,30 @@ function DayDetailPanel({
         </div>
       </div>
 
-      {/* Future placeholder for nutrition totals */}
-      <div
-        className="rounded-2xl px-4 py-3"
-        style={{ background: PALETTE.panel, border: `1px dashed ${PALETTE.line}` }}
-      >
-        <p className="text-xs" style={{ color: PALETTE.mute }}>
-          Nutrition — coming in M4
-        </p>
-      </div>
+      {/* Health samples for the day */}
+      {(dayData.stepsCount !== null || dayData.sleepMin !== null) && (
+        <div
+          className="rounded-2xl px-4 py-3 flex gap-4"
+          style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}
+        >
+          {dayData.stepsCount !== null && (
+            <div>
+              <p className="text-xs" style={{ color: PALETTE.mute }}>Steps</p>
+              <p className="text-sm font-medium" style={{ color: PALETTE.fg, fontVariantNumeric: 'tabular-nums' }}>
+                {dayData.stepsCount.toLocaleString()}
+              </p>
+            </div>
+          )}
+          {dayData.sleepMin !== null && (
+            <div>
+              <p className="text-xs" style={{ color: PALETTE.mute }}>Sleep</p>
+              <p className="text-sm font-medium" style={{ color: PALETTE.fg, fontVariantNumeric: 'tabular-nums' }}>
+                {(dayData.sleepMin / 60).toFixed(1)} hr
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Add session / future */}
       {future ? (
@@ -574,7 +603,7 @@ export function CalendarView({ onClose, onSessionChanged, initialDate }: Calenda
 
       const prDates = computePRDates(enrichedSets)
 
-      setCalendarData({ ...raw, prDates, enrichedSets })
+      setCalendarData({ ...raw, healthSamples: raw.healthSamples, prDates, enrichedSets })
     })
   }, [loadKey])
 

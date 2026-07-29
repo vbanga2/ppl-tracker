@@ -28,6 +28,7 @@ import {
   saveProfile,
 } from '../../data/repo'
 import { PALETTE, SURFACE, BORDER } from '../../ui/tokens'
+import { HealthSection } from './HealthSection'
 
 type Range = 'month' | 'year' | 'all'
 type PhotoPoseFilter = 'all' | 'front' | 'side' | 'back' | 'other'
@@ -107,22 +108,31 @@ const labelStyle: React.CSSProperties = {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+const BODY_TABS = ['weight', 'measurements', 'photos', 'health'] as const
+type BodyTab = (typeof BODY_TABS)[number]
+const BODY_TAB_LABELS: Record<BodyTab, string> = {
+  weight: 'Weight',
+  measurements: 'Measurements',
+  photos: 'Photos',
+  health: 'Health',
+}
+
 export function BodyPage() {
-  const [activeSection, setActiveSection] = useState<'weight' | 'measurements' | 'photos'>('weight')
+  const [activeSection, setActiveSection] = useState<BodyTab>('weight')
 
   return (
     <div style={{ paddingTop: 'max(env(safe-area-inset-top), 24px)', paddingLeft: 16, paddingRight: 16, paddingBottom: 16, color: PALETTE.fg }}>
       <h1 style={{ fontSize: 20, fontWeight: 500, marginBottom: 16 }}>Body</h1>
 
       {/* Section tabs */}
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-        {(['weight', 'measurements', 'photos'] as const).map(s => (
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto' }}>
+        {BODY_TABS.map(s => (
           <button
             key={s}
             onClick={() => setActiveSection(s)}
             style={{
-              flex: 1,
-              padding: '7px 0',
+              flex: '1 0 auto',
+              padding: '7px 10px',
               borderRadius: 20,
               fontSize: 13,
               fontWeight: activeSection === s ? 500 : 400,
@@ -130,9 +140,10 @@ export function BodyPage() {
               color: activeSection === s ? PALETTE.ink : PALETTE.dim,
               border: `1px solid ${activeSection === s ? PALETTE.fg : BORDER.subtle}`,
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
             }}
           >
-            {s === 'weight' ? 'Weight' : s === 'measurements' ? 'Measurements' : 'Photos'}
+            {BODY_TAB_LABELS[s]}
           </button>
         ))}
       </div>
@@ -140,6 +151,7 @@ export function BodyPage() {
       {activeSection === 'weight' && <WeightSection />}
       {activeSection === 'measurements' && <MeasurementsSection />}
       {activeSection === 'photos' && <PhotosSection />}
+      {activeSection === 'health' && <HealthSection />}
     </div>
   )
 }

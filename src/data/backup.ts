@@ -12,6 +12,7 @@ export interface BackupData {
   cardioLogs: unknown[]
   bodyMetrics: unknown[]
   healthSamples: unknown[]
+  healthWorkouts: unknown[]
   routes: unknown[]
   foods: unknown[]
   mealEntries: unknown[]
@@ -24,7 +25,7 @@ export interface BackupData {
 export async function exportDatabase(): Promise<BackupData> {
   const [
     exercises, blocks, sessions, setLogs, cardioLogs,
-    bodyMetrics, healthSamples, routes, foods, mealEntries, exerciseNotes,
+    bodyMetrics, healthSamples, healthWorkouts, routes, foods, mealEntries, exerciseNotes,
     bodyMeasurements, nutritionTargets, profile,
   ] = await Promise.all([
     db.exercises.toArray(),
@@ -34,6 +35,7 @@ export async function exportDatabase(): Promise<BackupData> {
     db.cardioLogs.toArray(),
     db.bodyMetrics.toArray(),
     db.healthSamples.toArray(),
+    db.healthWorkouts.toArray(),
     db.routes.toArray(),
     db.foods.toArray(),
     db.mealEntries.toArray(),
@@ -44,7 +46,7 @@ export async function exportDatabase(): Promise<BackupData> {
   ])
 
   return {
-    version: 4,
+    version: 5,
     exportedAt: Date.now(),
     exercises,
     blocks,
@@ -53,6 +55,7 @@ export async function exportDatabase(): Promise<BackupData> {
     cardioLogs,
     bodyMetrics,
     healthSamples,
+    healthWorkouts,
     routes,
     foods,
     mealEntries,
@@ -160,7 +163,7 @@ async function mergeBackupData(data: BackupData): Promise<void> {
   await db.transaction(
     'rw',
     [db.exercises, db.blocks, db.sessions, db.setLogs, db.cardioLogs,
-      db.bodyMetrics, db.healthSamples, db.routes, db.foods, db.mealEntries,
+      db.bodyMetrics, db.healthSamples, db.healthWorkouts, db.routes, db.foods, db.mealEntries,
       db.exerciseNotes, db.bodyMeasurements, db.nutritionTargets, db.profile],
     async () => {
       await mergeTable(db.exercises, data.exercises ?? [])
@@ -170,6 +173,7 @@ async function mergeBackupData(data: BackupData): Promise<void> {
       await mergeTable(db.cardioLogs, data.cardioLogs ?? [])
       await mergeTable(db.bodyMetrics, data.bodyMetrics ?? [])
       await mergeTable(db.healthSamples, data.healthSamples ?? [])
+      await mergeTable(db.healthWorkouts, data.healthWorkouts ?? [])
       await mergeTable(db.routes, data.routes ?? [])
       await mergeTable(db.foods, data.foods ?? [])
       await mergeTable(db.mealEntries, data.mealEntries ?? [])

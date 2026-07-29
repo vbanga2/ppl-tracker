@@ -7,7 +7,7 @@ import {
   listBackups,
   restoreFromSnapshot,
 } from '../../data/backup'
-import { getPhotoStorageBytes } from '../../data/repo'
+import { getPhotoStorageBytes, getHealthSampleCount, getHealthWorkoutCount } from '../../data/repo'
 import type { DbBackupSnapshot } from '../../data/db'
 import { PALETTE } from '../../ui/tokens'
 
@@ -201,6 +201,10 @@ export function SettingsPage() {
         )}
       </Section>
 
+      <Section title="Apple Health">
+        <HealthStats />
+      </Section>
+
       <Section title="Storage">
         <StorageInfo />
       </Section>
@@ -258,6 +262,53 @@ function ActionButton({
     >
       {children}
     </button>
+  )
+}
+
+function HealthStats() {
+  const [sampleCount, setSampleCount] = useState<number | null>(null)
+  const [workoutCount, setWorkoutCount] = useState<number | null>(null)
+  const lastImportAt = localStorage.getItem('lastHealthImportAt')
+
+  useEffect(() => {
+    void Promise.all([
+      getHealthSampleCount().then(setSampleCount),
+      getHealthWorkoutCount().then(setWorkoutCount),
+    ])
+  }, [])
+
+  if (sampleCount === 0 && workoutCount === 0) {
+    return (
+      <p className="text-sm" style={{ color: PALETTE.mute }}>
+        No Apple Health data imported. Use the Health tab in Body to import.
+      </p>
+    )
+  }
+
+  return (
+    <div
+      className="rounded-xl px-4 py-3"
+      style={{ background: PALETTE.panel, border: `1px solid ${PALETTE.line}` }}
+    >
+      {lastImportAt && (
+        <p className="text-xs mb-1" style={{ color: PALETTE.dim }}>
+          Last import:{' '}
+          {new Date(parseInt(lastImportAt)).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+          })}
+        </p>
+      )}
+      {sampleCount !== null && (
+        <p className="text-xs mb-0.5" style={{ color: PALETTE.dim }}>
+          Daily samples: {sampleCount}
+        </p>
+      )}
+      {workoutCount !== null && (
+        <p className="text-xs" style={{ color: PALETTE.dim }}>
+          Workouts: {workoutCount}
+        </p>
+      )}
+    </div>
   )
 }
 
