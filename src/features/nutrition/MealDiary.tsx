@@ -11,6 +11,7 @@ import {
 } from '../../data/repo'
 import { Stepper } from '../../ui/Stepper'
 import { PALETTE, SURFACE, BORDER } from '../../ui/tokens'
+import { BarcodeScanner } from './BarcodeScanner'
 import slidersIcon from '../../assets/nav-icons/sliders.png'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ type Overlay =
   | { kind: 'pickFood'; slot: MealSlot }
   | { kind: 'setServings'; food: DbFood; slot: MealSlot }
   | { kind: 'quickAdd'; slot: MealSlot }
+  | { kind: 'barcode'; slot: MealSlot }
   | { kind: 'copyDay' }
   | { kind: 'copySlot'; targetSlot: MealSlot }
 
@@ -379,11 +381,12 @@ interface FoodPickerViewProps {
   foods: DbFood[]
   onPick: (food: DbFood) => void
   onQuickAdd: () => void
+  onScan: () => void
   onOpenLibrary: () => void
   onClose: () => void
 }
 
-function FoodPickerView({ slot, foods, onPick, onQuickAdd, onOpenLibrary, onClose }: FoodPickerViewProps) {
+function FoodPickerView({ slot, foods, onPick, onQuickAdd, onScan, onOpenLibrary, onClose }: FoodPickerViewProps) {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -408,9 +411,12 @@ function FoodPickerView({ slot, foods, onPick, onQuickAdd, onOpenLibrary, onClos
         <input ref={inputRef} type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search food library…" style={{ ...INPUT, fontSize: 15 }} />
       </div>
 
-      <div style={{ padding: '0 16px 8px', flexShrink: 0 }}>
-        <button onClick={onQuickAdd} style={{ width: '100%', minHeight: 44, background: PALETTE.panel, border: `1px solid ${PALETTE.line}`, borderRadius: 10, color: PALETTE.dim, fontSize: 14, cursor: 'pointer', textAlign: 'left', padding: '0 14px' }}>
-          Quick add — log bare macros without a food record
+      <div style={{ padding: '0 16px 8px', flexShrink: 0, display: 'flex', gap: 8 }}>
+        <button onClick={onScan} style={{ flex: 1, minHeight: 44, background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, color: PALETTE.dim, fontSize: 14, cursor: 'pointer', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <span style={{ fontSize: 16 }}>▦</span> Scan barcode
+        </button>
+        <button onClick={onQuickAdd} style={{ flex: 1, minHeight: 44, background: SURFACE.raised, border: `1px solid ${BORDER.subtle}`, borderRadius: 10, color: PALETTE.dim, fontSize: 14, cursor: 'pointer', textAlign: 'center' }}>
+          Quick add
         </button>
       </div>
 
@@ -1000,6 +1006,16 @@ export function MealDiary({ foods, onOpenLibrary, onOpenGoals }: MealDiaryProps)
 
   // ── Full-screen overlays ──
 
+  if (overlay.kind === 'barcode') {
+    const { slot } = overlay
+    return (
+      <BarcodeScanner
+        onFoodReady={food => setOverlay({ kind: 'setServings', food, slot })}
+        onClose={() => setOverlay({ kind: 'pickFood', slot })}
+      />
+    )
+  }
+
   if (overlay.kind === 'pickFood') {
     return (
       <FoodPickerView
@@ -1007,6 +1023,7 @@ export function MealDiary({ foods, onOpenLibrary, onOpenGoals }: MealDiaryProps)
         foods={foods}
         onPick={food => setOverlay({ kind: 'setServings', food, slot: (overlay as { kind: 'pickFood'; slot: MealSlot }).slot })}
         onQuickAdd={() => setOverlay({ kind: 'quickAdd', slot: (overlay as { kind: 'pickFood'; slot: MealSlot }).slot })}
+        onScan={() => setOverlay({ kind: 'barcode', slot: (overlay as { kind: 'pickFood'; slot: MealSlot }).slot })}
         onOpenLibrary={onOpenLibrary}
         onClose={() => setOverlay({ kind: 'none' })}
       />

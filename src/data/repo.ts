@@ -421,6 +421,14 @@ export async function recordFoodUsed(foodId: string): Promise<void> {
   await db.foods.update(foodId, { lastUsedAt: now(), useCount: food.useCount + 1, updatedAt: now() })
 }
 
+export async function getFoodByBarcode(barcode: string): Promise<DbFood | null> {
+  const food = await db.foods
+    .where('barcode').equals(barcode)
+    .filter(f => f.deletedAt === null)
+    .first()
+  return food ?? null
+}
+
 // ─── Meal Entries ─────────────────────────────────────────────────────────────
 
 export async function getMealEntriesForDate(date: string): Promise<DbMealEntry[]> {
